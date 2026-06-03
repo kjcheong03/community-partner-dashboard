@@ -42,7 +42,7 @@ export default function RequestQueue({ requests, topic, selectedId, onSelect }: 
   }, [requests, topic, area, helpType, status, urgency, search]);
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 flex flex-col">
+    <div className="bg-white rounded-xl border border-slate-200 flex flex-col flex-1 min-h-0">
       {/* Queue header */}
       <div className="px-5 py-4 border-b border-slate-100">
         <div className="flex items-center justify-between mb-3">
@@ -72,8 +72,8 @@ export default function RequestQueue({ requests, topic, selectedId, onSelect }: 
         </div>
       </div>
 
-      {/* Table — overflow-x-auto prevents horizontal bleed when drawer is open */}
-      <div className="overflow-x-auto">
+      {/* Table — flex-1 fills available height; overflow-x-auto prevents bleed */}
+      <div className="overflow-x-auto flex-1 flex flex-col min-h-0">
         <div className="grid grid-cols-[80px_100px_1fr_90px_140px_1fr_110px] gap-3 px-5 py-2.5 bg-slate-50 border-b border-slate-100 text-xs font-medium text-slate-500 uppercase tracking-wide min-w-[640px]">
           <span>ID</span>
           <span>Area</span>
@@ -85,7 +85,7 @@ export default function RequestQueue({ requests, topic, selectedId, onSelect }: 
         </div>
 
         {/* Rows */}
-        <div className="divide-y divide-slate-50 min-w-[640px]">
+        <div className="divide-y divide-slate-50 min-w-[640px] overflow-y-auto thin-scrollbar flex-1">
           {filtered.length === 0 ? (
             <div className="px-5 py-12 text-center text-slate-400 text-sm">
               No requests match the selected filters.
