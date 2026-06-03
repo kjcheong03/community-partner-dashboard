@@ -4,7 +4,7 @@ import type { HelpRequest } from "@/lib/types";
 
 type Props = {
   area: string;
-  requests: HelpRequest[]; // already filtered to topic
+  requests: HelpRequest[]; // all requests, unfiltered by topic
 };
 
 export default function AreaSummary({ area, requests }: Props) {
