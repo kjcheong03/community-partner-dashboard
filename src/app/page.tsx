@@ -42,33 +42,27 @@ export default function DashboardPage() {
           }}
         />
 
-        <div className="flex flex-1 min-h-0">
-          {/* Main content */}
-          <main className="flex-1 overflow-y-auto p-6 space-y-5 min-w-0">
-            <KpiRow requests={requests} topic={topic} />
+        <main className="flex-1 overflow-y-auto p-6 space-y-5">
+          <KpiRow requests={requests} topic={topic} />
 
-            <RequestQueue
-              requests={requests}
-              topic={topic}
-              selectedId={selectedId}
-              onSelect={handleSelect}
-            />
+          <RequestQueue
+            requests={requests}
+            topic={topic}
+            selectedId={selectedId}
+            onSelect={handleSelect}
+          />
 
-            <CommunityInsights requests={requests} topic={topic} />
-          </main>
-
-          {/* Detail drawer */}
-          {selectedRequest && (
-            <div className="relative shrink-0">
-              <RequestDetailDrawer
-                request={selectedRequest}
-                onClose={() => setSelectedId(null)}
-                onUpdate={handleUpdate}
-              />
-            </div>
-          )}
-        </div>
+          <CommunityInsights requests={requests} topic={topic} />
+        </main>
       </div>
+
+      {selectedRequest && (
+        <RequestDetailDrawer
+          request={selectedRequest}
+          onClose={() => setSelectedId(null)}
+          onUpdate={handleUpdate}
+        />
+      )}
     </div>
   );
 }

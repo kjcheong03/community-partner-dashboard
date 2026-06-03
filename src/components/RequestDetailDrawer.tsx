@@ -112,9 +112,13 @@ export default function RequestDetailDrawer({ request, onClose, onUpdate }: Prop
   const canReroute = !["Fulfilled", "Unable To Fulfil", "Rerouted"].includes(request.status);
 
   return (
-    <div className="w-96 bg-white border-l border-slate-200 flex flex-col overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-6"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between">
+      <div className="px-6 py-5 border-b border-slate-100 flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
             <span className="font-mono text-xs text-slate-400">{request.id}</span>
@@ -132,7 +136,7 @@ export default function RequestDetailDrawer({ request, onClose, onUpdate }: Prop
 
       <div className="flex-1 overflow-y-auto thin-scrollbar">
         {/* Request info */}
-        <section className="px-5 py-4 border-b border-slate-100">
+        <section className="px-6 py-4 border-b border-slate-100">
           <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Request Information</h4>
           <div className="space-y-2 text-sm">
             <Row label="Urgency">
@@ -150,7 +154,7 @@ export default function RequestDetailDrawer({ request, onClose, onUpdate }: Prop
 
         {/* Risk factors */}
         {request.riskFactors.length > 0 && (
-          <section className="px-5 py-4 border-b border-slate-100">
+          <section className="px-6 py-4 border-b border-slate-100">
             <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Risk Factors</h4>
             <div className="flex flex-wrap gap-1.5">
               {request.riskFactors.map((rf) => (
@@ -169,13 +173,13 @@ export default function RequestDetailDrawer({ request, onClose, onUpdate }: Prop
         )}
 
         {/* Caregiver notes */}
-        <section className="px-5 py-4 border-b border-slate-100">
+        <section className="px-6 py-4 border-b border-slate-100">
           <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Caregiver Notes</h4>
           <p className="text-sm text-slate-600 leading-relaxed">{request.notes}</p>
         </section>
 
         {/* Recommended action */}
-        <section className="px-5 py-4 border-b border-slate-100">
+        <section className="px-6 py-4 border-b border-slate-100">
           <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Recommended Action</h4>
           <div className="bg-blue-50 rounded-lg p-3 text-sm text-blue-700">
             {request.urgency === "High"
@@ -187,7 +191,7 @@ export default function RequestDetailDrawer({ request, onClose, onUpdate }: Prop
         </section>
 
         {/* Team assignment */}
-        <section className="px-5 py-4 border-b border-slate-100">
+        <section className="px-6 py-4 border-b border-slate-100">
           <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Assign Team</h4>
           <div className="relative">
             <select
@@ -237,7 +241,7 @@ export default function RequestDetailDrawer({ request, onClose, onUpdate }: Prop
         </section>
 
         {/* Activity timeline */}
-        <section className="px-5 py-4">
+        <section className="px-6 py-4">
           <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-4">Activity Log</h4>
           <ActivityTimeline entries={request.activityLog} />
         </section>
@@ -245,7 +249,7 @@ export default function RequestDetailDrawer({ request, onClose, onUpdate }: Prop
 
       {/* Reroute confirmation dialog */}
       {showRerouteDialog && (
-        <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-50 p-6">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-6">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm">
             <h3 className="font-semibold text-slate-800 mb-2">Reroute Request</h3>
             <p className="text-sm text-slate-500 mb-4">Select the organisation to reroute {request.id} to.</p>
@@ -275,6 +279,7 @@ export default function RequestDetailDrawer({ request, onClose, onUpdate }: Prop
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
