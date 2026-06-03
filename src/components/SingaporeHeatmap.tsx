@@ -1,7 +1,7 @@
 "use client";
 
 import L from "leaflet";
-import { MapContainer, TileLayer, Marker } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Tooltip } from "react-leaflet";
 import type { HelpRequest, Topic } from "@/lib/types";
 import { areaMarkers } from "@/data/areaMarkers";
 import "leaflet/dist/leaflet.css";
@@ -118,6 +118,10 @@ export default function SingaporeHeatmap({ requests, selectedArea, selectedTopic
 
             const icon = createMarkerIcon(color, stats.openCount, isSelected);
 
+            const unfulfilledCount = filteredRequests
+              .filter((r) => r.area === marker.name)
+              .filter((r) => r.status === "Unable To Fulfil").length;
+
             return (
               <Marker
                 key={marker.name}
@@ -128,7 +132,23 @@ export default function SingaporeHeatmap({ requests, selectedArea, selectedTopic
                 }}
                 title={marker.name}
               >
-                {/* Popup on click */}
+                <Tooltip
+                  permanent={false}
+                  interactive={true}
+                  className="custom-tooltip"
+                  direction="top"
+                  offset={[0, -10]}
+                >
+                  <div style={{ fontSize: "12px", whiteSpace: "nowrap" }}>
+                    <strong>{marker.name}</strong>
+                    <br />
+                    {stats.openCount} Active Requests
+                    <br />
+                    {stats.highPriority} High Priority
+                    <br />
+                    {unfulfilledCount} Unfulfilled
+                  </div>
+                </Tooltip>
               </Marker>
             );
           })}
