@@ -3,13 +3,14 @@
 import L from "leaflet";
 import type GeoJSON from "geojson";
 import { MapContainer, TileLayer, GeoJSON as GeoJSONLayer } from "react-leaflet";
-import type { HelpRequest } from "@/lib/types";
+import type { HelpRequest, Topic } from "@/lib/types";
 import { singaporeGeoJSON } from "@/data/singaporeGeoJSON";
 import "leaflet/dist/leaflet.css";
 
 type Props = {
   requests: HelpRequest[];
   selectedArea: string | null;
+  selectedTopic: "All" | Topic;
   onSelectArea: (area: string | null) => void;
 };
 
@@ -25,8 +26,13 @@ function getAreaStats(areaName: string, requests: HelpRequest[]) {
   };
 }
 
-function getAreaColor(areaName: string, requests: HelpRequest[], selectedArea: string | null): string {
+function getAreaColor(areaName: string, requests: HelpRequest[], selectedArea: string | null, selectedTopic?: string): string {
   const { openCount, hasHigh } = getAreaStats(areaName, requests);
+
+  // If filtering by topic and no requests in this area, make it nearly invisible
+  if (selectedTopic && selectedTopic !== "All" && openCount === 0) {
+    return "#fafbfc"; // nearly white for filtered-out areas
+  }
 
   if (selectedArea && areaName !== selectedArea) {
     return "#e0e7ff"; // lighter blue when not selected but others are
@@ -39,12 +45,13 @@ function getAreaColor(areaName: string, requests: HelpRequest[], selectedArea: s
   return "#f1f5f9"; // very light grey for no requests
 }
 
-export default function SingaporeHeatmap({ requests, selectedArea, onSelectArea }: Props) {
-  const totalOpen = requests.filter((r) => !["Fulfilled", "Unable To Fulfil", "Rerouted"].includes(r.status)).length;
+export default function SingaporeHeatmap({ requests, selectedArea, selectedTopic, onSelectArea }: Props) {
+  const filteredRequests = requests.filter((r) => selectedTopic === "All" || r.topic === selectedTopic);
+  const totalOpen = filteredRequests.filter((r) => !["Fulfilled", "Unable To Fulfil", "Rerouted"].includes(r.status)).length;
 
   const onEachFeature = (feature: GeoJSON.Feature<GeoJSON.Geometry, { name: string; area: string }>, layer: L.GeoJSON) => {
     const areaName = feature.properties?.name ?? "";
-    const stats = getAreaStats(areaName, requests);
+    const stats = getAreaStats(areaName, filteredRequests);
     const isSelected = selectedArea === areaName;
 
     // Set initial styling
@@ -52,7 +59,7 @@ export default function SingaporeHeatmap({ requests, selectedArea, onSelectArea 
       color: isSelected ? "#2563eb" : "#94a3b8",
       weight: isSelected ? 3 : 2,
       opacity: isSelected ? 1 : 0.7,
-      fillColor: getAreaColor(areaName, requests, selectedArea),
+      fillColor: getAreaColor(areaName, filteredRequests, selectedArea, selectedTopic),
       fillOpacity: isSelected ? 0.8 : 0.6,
     });
 
@@ -91,7 +98,7 @@ export default function SingaporeHeatmap({ requests, selectedArea, onSelectArea 
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4">
+    <div className="bg-white rounded-xl border border-slate-200 p-4 relative z-0">
       <div className="flex items-center justify-between mb-3">
         <div>
           <h2 className="font-semibold text-slate-800 text-sm">Singapore Needs Overview</h2>
@@ -131,7 +138,7 @@ export default function SingaporeHeatmap({ requests, selectedArea, onSelectArea 
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             maxZoom={13}
           />
-          <GeoJSONLayer key={`geojson-${selectedArea}`} data={singaporeGeoJSON} onEachFeature={onEachFeature} />
+          <GeoJSONLayer key={`geojson-${selectedArea}-${selectedTopic}`} data={singaporeGeoJSON} onEachFeature={onEachFeature} />
         </MapContainer>
       </div>
     </div>

@@ -1,18 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import type { HelpRequest } from "@/lib/types";
+import dynamic from "next/dynamic";
+import type { HelpRequest, Topic } from "@/lib/types";
 import { mockRequests } from "@/data/mockRequests";
 import TopNav from "@/components/TopNav";
-import SingaporeHeatmap from "@/components/SingaporeHeatmap";
 import AreaSummary from "@/components/AreaSummary";
 import RequestQueue from "@/components/RequestQueue";
 import RequestDetailDrawer from "@/components/RequestDetailDrawer";
+
+const SingaporeHeatmap = dynamic(() => import("@/components/SingaporeHeatmap"), {
+  ssr: false,
+});
 
 export default function DashboardPage() {
   const [requests, setRequests] = useState<HelpRequest[]>(mockRequests);
   const [selectedArea, setSelectedArea] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedTopic, setSelectedTopic] = useState<"All" | Topic>("All");
 
   const selectedRequest = requests.find((r) => r.id === selectedId) ?? null;
 
@@ -34,17 +39,20 @@ export default function DashboardPage() {
           <SingaporeHeatmap
             requests={requests}
             selectedArea={selectedArea}
+            selectedTopic={selectedTopic}
             onSelectArea={handleSelectArea}
           />
 
           {selectedArea && (
-            <AreaSummary area={selectedArea} requests={requests} />
+            <AreaSummary area={selectedArea} requests={requests} selectedTopic={selectedTopic} />
           )}
 
           <RequestQueue
             requests={requests}
             selectedArea={selectedArea}
             selectedId={selectedId}
+            selectedTopic={selectedTopic}
+            onSelectTopic={setSelectedTopic}
             onSelect={(req) => setSelectedId(selectedId === req.id ? null : req.id)}
           />
         </div>

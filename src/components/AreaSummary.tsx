@@ -1,14 +1,17 @@
 "use client";
 
-import type { HelpRequest } from "@/lib/types";
+import type { HelpRequest, Topic } from "@/lib/types";
 
 type Props = {
   area: string;
-  requests: HelpRequest[]; // all requests, unfiltered by topic
+  requests: HelpRequest[];
+  selectedTopic: "All" | Topic;
 };
 
-export default function AreaSummary({ area, requests }: Props) {
-  const areaReqs = requests.filter((r) => r.area === area);
+export default function AreaSummary({ area, requests, selectedTopic }: Props) {
+  const areaReqs = requests
+    .filter((r) => r.area === area)
+    .filter((r) => selectedTopic === "All" || r.topic === selectedTopic);
   const open = areaReqs.filter((r) => !["Fulfilled", "Unable To Fulfil", "Rerouted"].includes(r.status));
   const highPriority = open.filter((r) => r.urgency === "High").length;
   const unfulfilled = areaReqs.filter((r) => r.status === "Unable To Fulfil").length;

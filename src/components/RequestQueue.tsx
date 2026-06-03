@@ -9,6 +9,8 @@ type Props = {
   requests: HelpRequest[];
   selectedArea: string | null;
   selectedId: string | null;
+  selectedTopic: "All" | Topic;
+  onSelectTopic: (topic: "All" | Topic) => void;
   onSelect: (req: HelpRequest) => void;
 };
 
@@ -16,15 +18,14 @@ const TOPICS: ("All" | Topic)[] = ["All", "COVID-19", "Dengue", "Haze"];
 const STATUSES: ("All" | Status)[] = ["All", "New", "Received", "Accepted", "In Progress", "Fulfilled", "Unable To Fulfil", "Rerouted"];
 const URGENCIES: ("All" | Urgency)[] = ["All", "High", "Medium", "Low"];
 
-export default function RequestQueue({ requests, selectedArea, selectedId, onSelect }: Props) {
-  const [topic, setTopic] = useState<"All" | Topic>("All");
+export default function RequestQueue({ requests, selectedArea, selectedId, selectedTopic, onSelectTopic, onSelect }: Props) {
   const [status, setStatus] = useState<"All" | Status>("All");
   const [urgency, setUrgency] = useState<"All" | Urgency>("All");
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
     return requests
-      .filter((r) => topic === "All" || r.topic === topic)
+      .filter((r) => selectedTopic === "All" || r.topic === selectedTopic)
       .filter((r) => !selectedArea || r.area === selectedArea)
       .filter((r) => status === "All" || r.status === status)
       .filter((r) => urgency === "All" || r.urgency === urgency)
@@ -35,12 +36,12 @@ export default function RequestQueue({ requests, selectedArea, selectedId, onSel
           r.helpType.toLowerCase().includes(search.toLowerCase()) ||
           r.assignedOrganisation.toLowerCase().includes(search.toLowerCase())
       );
-  }, [requests, topic, selectedArea, status, urgency, search]);
+  }, [requests, selectedTopic, selectedArea, status, urgency, search]);
 
-  const hasActiveFilters = topic !== "All" || status !== "All" || urgency !== "All" || search !== "";
+  const hasActiveFilters = selectedTopic !== "All" || status !== "All" || urgency !== "All" || search !== "";
 
   function clearFilters() {
-    setTopic("All");
+    onSelectTopic("All");
     setStatus("All");
     setUrgency("All");
     setSearch("");
@@ -58,7 +59,7 @@ export default function RequestQueue({ requests, selectedArea, selectedId, onSel
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <Pill label="Topic" value={topic} onChange={(v) => setTopic(v as typeof topic)} options={TOPICS} />
+          <Pill label="Topic" value={selectedTopic} onChange={(v) => onSelectTopic(v as typeof selectedTopic)} options={TOPICS} />
           <Pill label="Status" value={status} onChange={(v) => setStatus(v as typeof status)} options={STATUSES} />
           <Pill label="Urgency" value={urgency} onChange={(v) => setUrgency(v as typeof urgency)} options={URGENCIES} />
           <div className="relative">
