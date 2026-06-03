@@ -131,7 +131,7 @@ export default function SingaporeHeatmap({ requests, selectedArea, onSelectArea 
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             maxZoom={13}
           />
-          <GeoJSONLayer data={singaporeGeoJSON} onEachFeature={onEachFeature} />
+          <GeoJSONLayer key={`geojson-${selectedArea}`} data={singaporeGeoJSON} onEachFeature={onEachFeature} />
         </MapContainer>
       </div>
     </div>
