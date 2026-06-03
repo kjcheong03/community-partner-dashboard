@@ -1,10 +1,9 @@
 "use client";
 
 import L from "leaflet";
-import type GeoJSON from "geojson";
-import { MapContainer, TileLayer, GeoJSON as GeoJSONLayer } from "react-leaflet";
+import { MapContainer, TileLayer, Marker } from "react-leaflet";
 import type { HelpRequest, Topic } from "@/lib/types";
-import { singaporeGeoJSON } from "@/data/singaporeGeoJSON";
+import { areaMarkers } from "@/data/areaMarkers";
 import "leaflet/dist/leaflet.css";
 
 type Props = {
@@ -26,76 +25,46 @@ function getAreaStats(areaName: string, requests: HelpRequest[]) {
   };
 }
 
-function getAreaColor(areaName: string, requests: HelpRequest[], selectedArea: string | null, selectedTopic?: string): string {
-  const { openCount, hasHigh } = getAreaStats(areaName, requests);
+function getMarkerColor(openCount: number, hasHigh: boolean): string {
+  if (openCount === 0) return "#d1d5db"; // grey for no requests
+  if (hasHigh) return "#dc2626"; // red for high-priority
+  if (openCount >= 5) return "#ea580c"; // orange for elevated demand
+  return "#3b82f6"; // blue for active
+}
 
-  // If filtering by topic and no requests in this area, make it nearly invisible
-  if (selectedTopic && selectedTopic !== "All" && openCount === 0) {
-    return "#fafbfc"; // nearly white for filtered-out areas
-  }
+function createMarkerIcon(color: string, count: number, isSelected: boolean) {
+  const size = isSelected ? 44 : 36;
+  const fontSize = isSelected ? 16 : 14;
 
-  if (selectedArea && areaName !== selectedArea) {
-    return "#e0e7ff"; // lighter blue when not selected but others are
-  }
-
-  if (hasHigh && openCount > 0) return "#fee2e2"; // light red for high urgency
-  if (openCount >= 4) return "#3b82f6"; // bright blue for high volume
-  if (openCount >= 2) return "#93c5fd"; // medium blue
-  if (openCount === 1) return "#bfdbfe"; // light blue
-  return "#f1f5f9"; // very light grey for no requests
+  return L.divIcon({
+    html: `
+      <div style="
+        width: ${size}px;
+        height: ${size}px;
+        border-radius: 50%;
+        background-color: ${color};
+        border: ${isSelected ? 3 : 2}px solid ${isSelected ? "#1e40af" : "#475569"};
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        color: white;
+        font-size: ${fontSize}px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      ">
+        ${count}
+      </div>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2],
+    className: "custom-marker",
+  });
 }
 
 export default function SingaporeHeatmap({ requests, selectedArea, selectedTopic, onSelectArea }: Props) {
   const filteredRequests = requests.filter((r) => selectedTopic === "All" || r.topic === selectedTopic);
   const totalOpen = filteredRequests.filter((r) => !["Fulfilled", "Unable To Fulfil", "Rerouted"].includes(r.status)).length;
-
-  const onEachFeature = (feature: GeoJSON.Feature<GeoJSON.Geometry, { name: string; area: string }>, layer: L.GeoJSON) => {
-    const areaName = feature.properties?.name ?? "";
-    const stats = getAreaStats(areaName, filteredRequests);
-    const isSelected = selectedArea === areaName;
-
-    // Set initial styling
-    layer.setStyle({
-      color: isSelected ? "#2563eb" : "#94a3b8",
-      weight: isSelected ? 3 : 2,
-      opacity: isSelected ? 1 : 0.7,
-      fillColor: getAreaColor(areaName, filteredRequests, selectedArea, selectedTopic),
-      fillOpacity: isSelected ? 0.8 : 0.6,
-    });
-
-    // Hover effects
-    layer.on("mouseover", () => {
-      layer.setStyle({
-        weight: 3,
-        fillOpacity: 0.85,
-        opacity: 1,
-      });
-      layer.bringToFront();
-    });
-
-    layer.on("mouseout", () => {
-      const isSel = selectedArea === areaName;
-      layer.setStyle({
-        weight: isSel ? 3 : 2,
-        fillOpacity: isSel ? 0.8 : 0.6,
-        opacity: isSel ? 1 : 0.7,
-      });
-    });
-
-    // Click to select
-    layer.on("click", () => {
-      onSelectArea(isSelected ? null : areaName);
-    });
-
-    // Tooltip on hover
-    const tooltip = `<strong>${areaName}</strong><br/>
-      Open: ${stats.openCount}<br/>
-      High Priority: ${stats.highPriority}<br/>
-      Total: ${stats.total}`;
-    layer.bindPopup(tooltip, { closeButton: false, autoPan: false });
-    layer.on("mouseover", () => layer.openPopup());
-    layer.on("mouseout", () => layer.closePopup());
-  };
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 relative z-0">
@@ -105,21 +74,21 @@ export default function SingaporeHeatmap({ requests, selectedArea, selectedTopic
           <p className="text-xs text-slate-400 mt-0.5">
             {selectedArea
               ? `${selectedArea} selected — click again to deselect`
-              : `${totalOpen} open requests across all areas · click an area to filter`}
+              : `${totalOpen} open requests across all areas · click a marker to filter`}
           </p>
         </div>
         <div className="flex items-center gap-4 text-xs text-slate-400">
           <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded" style={{ backgroundColor: "#f1f5f9", border: "1px solid #cbd5e1" }} />
-            Quiet
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded" style={{ backgroundColor: "#93c5fd", border: "1px solid #3b82f6" }} />
+            <span className="w-3 h-3 rounded-full" style={{ backgroundColor: "#3b82f6" }} />
             Active
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded" style={{ backgroundColor: "#fee2e2", border: "1px solid #f87171" }} />
-            High urgency
+            <span className="w-3 h-3 rounded-full" style={{ backgroundColor: "#ea580c" }} />
+            Elevated
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full" style={{ backgroundColor: "#dc2626" }} />
+            High priority
           </span>
         </div>
       </div>
@@ -138,7 +107,31 @@ export default function SingaporeHeatmap({ requests, selectedArea, selectedTopic
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             maxZoom={13}
           />
-          <GeoJSONLayer key={`geojson-${selectedArea}-${selectedTopic}`} data={singaporeGeoJSON} onEachFeature={onEachFeature} />
+
+          {areaMarkers.map((marker) => {
+            const stats = getAreaStats(marker.name, filteredRequests);
+            const isSelected = selectedArea === marker.name;
+            const shouldHide = stats.openCount === 0 && selectedTopic !== "All";
+            const color = getMarkerColor(stats.openCount, stats.hasHigh);
+
+            if (shouldHide) return null;
+
+            const icon = createMarkerIcon(color, stats.openCount, isSelected);
+
+            return (
+              <Marker
+                key={marker.name}
+                position={[marker.lat, marker.lng]}
+                icon={icon}
+                eventHandlers={{
+                  click: () => onSelectArea(isSelected ? null : marker.name),
+                }}
+                title={marker.name}
+              >
+                {/* Popup on click */}
+              </Marker>
+            );
+          })}
         </MapContainer>
       </div>
     </div>

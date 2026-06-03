@@ -1,0 +1,22 @@
+// Singapore planning areas with centroid coordinates for marker-based map
+export const areaMarkers = [
+  { name: "Woodlands", region: "North", lat: 1.438, lng: 103.75 },
+  { name: "Sembawang", region: "North", lat: 1.446, lng: 103.85 },
+  { name: "Yishun", region: "North-East", lat: 1.435, lng: 103.87 },
+  { name: "Punggol", region: "North-East", lat: 1.425, lng: 103.99 },
+  { name: "Sengkang", region: "North-East", lat: 1.407, lng: 103.94 },
+  { name: "Ang Mo Kio", region: "Central", lat: 1.370, lng: 103.87 },
+  { name: "Hougang", region: "East", lat: 1.373, lng: 103.93 },
+  { name: "Toa Payoh", region: "Central", lat: 1.348, lng: 103.86 },
+  { name: "Serangoon", region: "East", lat: 1.358, lng: 103.92 },
+  { name: "Geylang", region: "East", lat: 1.316, lng: 103.94 },
+  { name: "Kallang", region: "East", lat: 1.312, lng: 103.88 },
+  { name: "Bedok", region: "East", lat: 1.315, lng: 103.99 },
+  { name: "Tampines", region: "East", lat: 1.345, lng: 104.05 },
+  { name: "Pasir Ris", region: "East", lat: 1.373, lng: 104.08 },
+  { name: "Jurong West", region: "West", lat: 1.330, lng: 103.71 },
+  { name: "Jurong East", region: "West", lat: 1.318, lng: 103.80 },
+  { name: "Clementi", region: "West", lat: 1.298, lng: 103.80 },
+  { name: "Queenstown", region: "Central", lat: 1.297, lng: 103.82 },
+  { name: "Bukit Merah", region: "Central", lat: 1.266, lng: 103.85 },
+];
