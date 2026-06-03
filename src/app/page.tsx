@@ -10,7 +10,6 @@ import KpiRow from "@/components/KpiRow";
 import RequestQueue from "@/components/RequestQueue";
 import RequestDetailDrawer from "@/components/RequestDetailDrawer";
 import CommunityInsights from "@/components/CommunityInsights";
-import PrivacyNotice from "@/components/PrivacyNotice";
 
 export default function DashboardPage() {
   const [topic, setTopic] = useState<Topic>("COVID-19");
@@ -56,7 +55,6 @@ export default function DashboardPage() {
             />
 
             <CommunityInsights requests={requests} topic={topic} />
-            <PrivacyNotice />
           </main>
 
           {/* Detail drawer */}
