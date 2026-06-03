@@ -1,7 +1,5 @@
 "use client";
 
-import { Download } from "lucide-react";
-
 export default function TopNav() {
   return (
     <header className="bg-slate-900 px-6 flex items-center justify-between h-14 shrink-0">
@@ -17,18 +15,12 @@ export default function TopNav() {
         </span>
       </div>
 
-      <div className="flex items-center gap-3">
-        <span className="text-slate-500 text-xs hidden lg:block">
-          {new Date().toLocaleString("en-SG", {
-            day: "2-digit", month: "short",
-            hour: "2-digit", minute: "2-digit", hour12: true,
-          })}
-        </span>
-        <button className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-          <Download size={12} />
-          Export
-        </button>
-      </div>
+      <span className="text-slate-500 text-xs hidden lg:block">
+        {new Date().toLocaleString("en-SG", {
+          day: "2-digit", month: "short",
+          hour: "2-digit", minute: "2-digit", hour12: true,
+        })}
+      </span>
     </header>
   );
 }
