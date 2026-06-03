@@ -1,94 +1,110 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Search, Filter } from "lucide-react";
-import type { HelpRequest, Topic, Status, Urgency, HelpType } from "@/lib/types";
+import { Search, X } from "lucide-react";
+import type { HelpRequest, Topic, Status, Urgency } from "@/lib/types";
 import { cn, urgencyColor, statusColor, formatDateTime } from "@/lib/utils";
 
 type Props = {
   requests: HelpRequest[];
   topic: Topic;
+  selectedArea: string | null;
   selectedId: string | null;
   onSelect: (req: HelpRequest) => void;
 };
 
-const AREAS = ["All Areas", "Tampines", "Bedok", "Jurong West", "Woodlands", "Ang Mo Kio", "Clementi", "Sengkang", "Queenstown", "Punggol", "Pasir Ris", "Yishun", "Hougang", "Jurong East", "Bukit Merah", "Geylang", "Kallang", "Serangoon", "Toa Payoh"];
-const HELP_TYPES: ("All Types" | HelpType)[] = ["All Types", "Medication Collection", "Transport Support", "Welfare Check", "Food & Essentials", "Masks & Hygiene", "Advisory Assistance"];
-const STATUSES: ("All Statuses" | Status)[] = ["All Statuses", "New", "Received", "Accepted", "In Progress", "Fulfilled", "Unable To Fulfil", "Rerouted"];
+const STATUSES: ("All" | Status)[] = ["All", "New", "Received", "Accepted", "In Progress", "Fulfilled", "Unable To Fulfil", "Rerouted"];
 const URGENCIES: ("All" | Urgency)[] = ["All", "High", "Medium", "Low"];
 
-export default function RequestQueue({ requests, topic, selectedId, onSelect }: Props) {
+export default function RequestQueue({ requests, topic, selectedArea, selectedId, onSelect }: Props) {
   const [search, setSearch] = useState("");
-  const [area, setArea] = useState("All Areas");
-  const [helpType, setHelpType] = useState<"All Types" | HelpType>("All Types");
-  const [status, setStatus] = useState<"All Statuses" | Status>("All Statuses");
+  const [status, setStatus] = useState<"All" | Status>("All");
   const [urgency, setUrgency] = useState<"All" | Urgency>("All");
 
   const filtered = useMemo(() => {
     return requests
       .filter((r) => r.topic === topic)
-      .filter((r) => area === "All Areas" || r.area === area)
-      .filter((r) => helpType === "All Types" || r.helpType === helpType)
-      .filter((r) => status === "All Statuses" || r.status === status)
+      .filter((r) => !selectedArea || r.area === selectedArea)
+      .filter((r) => status === "All" || r.status === status)
       .filter((r) => urgency === "All" || r.urgency === urgency)
       .filter(
         (r) =>
           !search ||
           r.id.toLowerCase().includes(search.toLowerCase()) ||
-          r.area.toLowerCase().includes(search.toLowerCase()) ||
           r.helpType.toLowerCase().includes(search.toLowerCase()) ||
           r.assignedOrganisation.toLowerCase().includes(search.toLowerCase())
       );
-  }, [requests, topic, area, helpType, status, urgency, search]);
+  }, [requests, topic, selectedArea, status, urgency, search]);
+
+  const hasActiveFilters = status !== "All" || urgency !== "All" || search !== "";
+
+  function clearFilters() {
+    setStatus("All");
+    setUrgency("All");
+    setSearch("");
+  }
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 flex flex-col flex-1 min-h-0">
-      {/* Queue header */}
-      <div className="px-5 py-4 border-b border-slate-100">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h2 className="font-semibold text-slate-800">Active Request Queue</h2>
-            <p className="text-xs text-slate-500 mt-0.5">{filtered.length} requests</p>
-          </div>
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search requests..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-56"
-            />
-          </div>
+    <div className="bg-white rounded-xl border border-slate-200 flex flex-col">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3 flex-wrap">
+        <div className="flex-1">
+          <h2 className="font-semibold text-slate-800 text-sm">
+            Request Queue
+            {selectedArea && (
+              <span className="ml-2 text-xs font-normal text-slate-400">— {selectedArea}</span>
+            )}
+          </h2>
+          <p className="text-xs text-slate-400">{filtered.length} requests</p>
         </div>
 
         {/* Filters */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <Filter size={13} className="text-slate-400" />
-          <Select value={area} onChange={setArea} options={AREAS} />
-          <Select value={helpType} onChange={(v) => setHelpType(v as typeof helpType)} options={HELP_TYPES} />
-          <Select value={status} onChange={(v) => setStatus(v as typeof status)} options={STATUSES} />
-          <Select value={urgency} onChange={(v) => setUrgency(v as typeof urgency)} options={URGENCIES} />
+        <div className="flex items-center gap-2">
+          <Pill label="Status" value={status} onChange={(v) => setStatus(v as typeof status)} options={STATUSES} />
+          <Pill label="Urgency" value={urgency} onChange={(v) => setUrgency(v as typeof urgency)} options={URGENCIES} />
+          <div className="relative">
+            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-7 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 w-36"
+            />
+          </div>
+          {hasActiveFilters && (
+            <button
+              onClick={clearFilters}
+              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 border border-slate-200 rounded-lg px-2 py-1.5 hover:bg-slate-50 transition-colors"
+            >
+              <X size={11} /> Clear
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Table — flex-1 fills available height; overflow-x-auto prevents bleed */}
-      <div className="overflow-x-auto flex-1 flex flex-col min-h-0">
-        <div className="grid grid-cols-[80px_100px_1fr_90px_140px_1fr_110px] gap-3 px-5 py-2.5 bg-slate-50 border-b border-slate-100 text-xs font-medium text-slate-500 uppercase tracking-wide min-w-[640px]">
+      {/* Table */}
+      <div className="overflow-x-auto">
+        {/* Col header */}
+        <div className="grid grid-cols-[72px_1fr_90px_140px_1fr_100px] gap-2 px-4 py-2 bg-slate-50 border-b border-slate-100 text-xs font-medium text-slate-500 uppercase tracking-wide min-w-[580px]">
           <span>ID</span>
-          <span>Area</span>
           <span>Help Type</span>
-          <span>Urgency</span>
+          <span>Priority</span>
           <span>Status</span>
           <span>Assigned To</span>
           <span>Submitted</span>
         </div>
 
         {/* Rows */}
-        <div className="divide-y divide-slate-50 min-w-[640px] overflow-y-auto thin-scrollbar flex-1">
+        <div className="divide-y divide-slate-50 min-w-[580px]">
           {filtered.length === 0 ? (
-            <div className="px-5 py-12 text-center text-slate-400 text-sm">
-              No requests match the selected filters.
+            <div className="px-4 py-10 text-center">
+              <p className="text-sm text-slate-400">No requests match the current filters.</p>
+              {hasActiveFilters && (
+                <button onClick={clearFilters} className="mt-2 text-xs text-blue-600 hover:underline">
+                  Clear filters
+                </button>
+              )}
             </div>
           ) : (
             filtered.map((req) => (
@@ -96,25 +112,24 @@ export default function RequestQueue({ requests, topic, selectedId, onSelect }: 
                 key={req.id}
                 onClick={() => onSelect(req)}
                 className={cn(
-                  "w-full grid grid-cols-[80px_100px_1fr_90px_140px_1fr_110px] gap-3 px-5 py-3.5 text-left text-sm hover:bg-blue-50 transition-colors",
-                  selectedId === req.id && "bg-blue-50 border-l-2 border-l-blue-500"
+                  "w-full grid grid-cols-[72px_1fr_90px_140px_1fr_100px] gap-2 px-4 py-3 text-left text-xs hover:bg-blue-50 transition-colors",
+                  selectedId === req.id && "bg-blue-50 outline outline-2 outline-blue-400 outline-offset-[-2px] rounded"
                 )}
               >
-                <span className="font-mono text-xs text-slate-500 font-medium">{req.id}</span>
-                <span className="text-slate-700 font-medium truncate">{req.area}</span>
-                <span className="text-slate-600 truncate">{req.helpType}</span>
+                <span className="font-mono text-slate-400 font-medium">{req.id}</span>
+                <span className="text-slate-700 font-medium truncate">{req.helpType}</span>
                 <span>
-                  <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap", urgencyColor(req.urgency))}>
+                  <span className={cn("font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap", urgencyColor(req.urgency))}>
                     {req.urgency}
                   </span>
                 </span>
                 <span>
-                  <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap", statusColor(req.status))}>
+                  <span className={cn("font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap", statusColor(req.status))}>
                     {req.status}
                   </span>
                 </span>
-                <span className="text-slate-500 text-xs truncate">{req.assignedOrganisation}</span>
-                <span className="text-slate-400 text-xs whitespace-nowrap">{formatDateTime(req.submittedAt)}</span>
+                <span className="text-slate-500 truncate">{req.assignedOrganisation}</span>
+                <span className="text-slate-400 whitespace-nowrap">{formatDateTime(req.submittedAt)}</span>
               </button>
             ))
           )}
@@ -124,11 +139,13 @@ export default function RequestQueue({ requests, topic, selectedId, onSelect }: 
   );
 }
 
-function Select<T extends string>({
+function Pill<T extends string>({
+  label,
   value,
   onChange,
   options,
 }: {
+  label: string;
   value: T;
   onChange: (v: T) => void;
   options: T[];
@@ -137,11 +154,16 @@ function Select<T extends string>({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as T)}
-      className="text-xs border border-slate-200 rounded-md px-2 py-1.5 text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+      className={cn(
+        "text-xs border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white transition-colors",
+        value === "All"
+          ? "border-slate-200 text-slate-500"
+          : "border-blue-300 text-blue-700 bg-blue-50"
+      )}
     >
       {options.map((o) => (
         <option key={o} value={o}>
-          {o}
+          {o === "All" ? `${label}: All` : o}
         </option>
       ))}
     </select>

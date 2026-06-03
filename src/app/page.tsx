@@ -5,56 +5,67 @@ import type { HelpRequest, Topic } from "@/lib/types";
 import { mockRequests } from "@/data/mockRequests";
 import TopNav from "@/components/TopNav";
 import KpiRow from "@/components/KpiRow";
+import SingaporeHeatmap from "@/components/SingaporeHeatmap";
+import AreaSummary from "@/components/AreaSummary";
 import RequestQueue from "@/components/RequestQueue";
 import RequestDetailDrawer from "@/components/RequestDetailDrawer";
-import AreaMap from "@/components/AreaMap";
-import CommunityInsights from "@/components/CommunityInsights";
 
 export default function DashboardPage() {
   const [topic, setTopic] = useState<Topic>("COVID-19");
   const [requests, setRequests] = useState<HelpRequest[]>(mockRequests);
+  const [selectedArea, setSelectedArea] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  const topicRequests = requests.filter((r) => r.topic === topic);
   const selectedRequest = requests.find((r) => r.id === selectedId) ?? null;
 
   function handleUpdate(id: string, updates: Partial<HelpRequest>) {
     setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, ...updates } : r)));
   }
 
-  function handleSelect(req: HelpRequest) {
-    setSelectedId(selectedId === req.id ? null : req.id);
+  function handleSelectArea(area: string | null) {
+    setSelectedArea(area);
+    setSelectedId(null);
   }
 
   return (
-    <div className="flex flex-col h-full min-h-screen bg-slate-100">
+    <div className="flex flex-col h-screen bg-slate-100 overflow-hidden">
       <TopNav
         selected={topic}
-        onChange={(t) => { setTopic(t); setSelectedId(null); }}
+        onChange={(t) => { setTopic(t); setSelectedArea(null); setSelectedId(null); }}
       />
 
-      {/* Content — fills remaining viewport height without scrolling */}
-      <div className="flex-1 flex flex-col gap-3 p-4 min-h-0">
-        <KpiRow requests={requests} topic={topic} />
+      <main className="flex-1 overflow-y-auto">
+        <div className="p-4 space-y-3">
+          {/* KPI strip — Singapore-wide */}
+          <KpiRow requests={requests} topic={topic} />
 
-        {/* 2-column body */}
-        <div className="flex-1 flex gap-3 min-h-0">
-          {/* Left — Request Queue */}
-          <div className="flex-[3] min-w-0 flex flex-col">
-            <RequestQueue
-              requests={requests}
-              topic={topic}
-              selectedId={selectedId}
-              onSelect={handleSelect}
+          {/* Heatmap */}
+          <SingaporeHeatmap
+            requests={requests}
+            topic={topic}
+            selectedArea={selectedArea}
+            onSelectArea={handleSelectArea}
+          />
+
+          {/* Area summary — conditional on selection */}
+          {selectedArea && (
+            <AreaSummary
+              area={selectedArea}
+              requests={topicRequests}
             />
-          </div>
+          )}
 
-          {/* Right — Area Map + Insights */}
-          <div className="flex-[2] flex flex-col gap-3 min-w-0">
-            <AreaMap requests={requests} topic={topic} />
-            <CommunityInsights requests={requests} topic={topic} />
-          </div>
+          {/* Request triage table */}
+          <RequestQueue
+            requests={requests}
+            topic={topic}
+            selectedArea={selectedArea}
+            selectedId={selectedId}
+            onSelect={(req) => setSelectedId(selectedId === req.id ? null : req.id)}
+          />
         </div>
-      </div>
+      </main>
 
       {selectedRequest && (
         <RequestDetailDrawer
