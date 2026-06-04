@@ -27,20 +27,53 @@ export function statusColor(status: Status): string {
   return map[status];
 }
 
+export function medicationCategoryColor(category: string): string {
+  const map: Record<string, string> = {
+    Anticoagulant: "bg-red-50 text-red-700 border-red-200",
+    Insulin: "bg-purple-50 text-purple-700 border-purple-200",
+    "Controlled Drug": "bg-rose-50 text-rose-700 border-rose-200",
+    Antihypertensive: "bg-blue-50 text-blue-700 border-blue-200",
+    Antidiabetic: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    Respiratory: "bg-cyan-50 text-cyan-700 border-cyan-200",
+    Cardiac: "bg-amber-50 text-amber-700 border-amber-200",
+  };
+  return map[category] ?? "bg-slate-50 text-slate-600 border-slate-200";
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function dateParts(iso: string) {
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (match) {
+    return {
+      day: Number(match[3]),
+      month: Number(match[2]) - 1,
+      hour: Number(match[4]),
+      minute: Number(match[5]),
+    };
+  }
+
+  const date = new Date(iso);
+  return {
+    day: date.getDate(),
+    month: date.getMonth(),
+    hour: date.getHours(),
+    minute: date.getMinutes(),
+  };
+}
+
+function formatClock(hour24: number, minute: number): string {
+  const period = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 || 12;
+  return `${String(hour12).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${period}`;
+}
+
 export function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-SG", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
+  const parts = dateParts(iso);
+  return formatClock(parts.hour, parts.minute);
 }
 
 export function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("en-SG", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
+  const parts = dateParts(iso);
+  return `${String(parts.day).padStart(2, "0")} ${MONTHS[parts.month] ?? ""} at ${formatClock(parts.hour, parts.minute)}`;
 }

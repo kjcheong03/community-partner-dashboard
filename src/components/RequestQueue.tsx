@@ -1,32 +1,49 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Search, X } from "lucide-react";
+import { Search, X, AlertTriangle } from "lucide-react";
 import type { HelpRequest, Topic, Status, Urgency } from "@/lib/types";
+import type { OrgId } from "@/lib/orgs";
 import { cn, urgencyColor, statusColor, formatDateTime } from "@/lib/utils";
+import { repeatRecipientNames } from "@/lib/analytics";
 
 type Props = {
+  org: OrgId;
   requests: HelpRequest[];
-  selectedArea: string | null;
   selectedId: string | null;
   selectedTopic: "All" | Topic;
   onSelectTopic: (topic: "All" | Topic) => void;
   onSelect: (req: HelpRequest) => void;
 };
 
-const TOPICS: ("All" | Topic)[] = ["All", "COVID-19", "Dengue", "Haze"];
-const STATUSES: ("All" | Status)[] = ["All", "New", "Received", "Accepted", "In Progress", "Fulfilled", "Unable To Fulfil", "Rerouted"];
+const TOPICS: ("All" | Topic)[] = ["All", "COVID-19", "Dengue"];
+const STATUSES: ("All" | Status)[] = ["All", "New", "Received", "Accepted", "In Progress", "Unable To Fulfil", "Rerouted"];
 const URGENCIES: ("All" | Urgency)[] = ["All", "High", "Medium", "Low"];
+const HIDDEN_QUEUE_STATUSES = new Set<Status>(["Fulfilled"]);
 
-export default function RequestQueue({ requests, selectedArea, selectedId, selectedTopic, onSelectTopic, onSelect }: Props) {
+function isUnassigned(r: HelpRequest) {
+  return r.assignedOrganisation === "Unassigned" || !r.assignedOrganisation;
+}
+
+function assignedToLabel(r: HelpRequest, org: OrgId) {
+  if (org === "Pharmacy") return r.pharmacyBranch ?? "Unrouted";
+  if (org === "AIC") return r.assignedTeam ?? r.pharmacyBranch ?? "—";
+  return r.assignedTeam ?? r.assignedCentre ?? "Unassigned";
+}
+
+export default function RequestQueue({ org, requests, selectedId, selectedTopic, onSelectTopic, onSelect }: Props) {
   const [status, setStatus] = useState<"All" | Status>("All");
   const [urgency, setUrgency] = useState<"All" | Urgency>("All");
   const [search, setSearch] = useState("");
 
+  const visibleRequests = useMemo(
+    () => requests.filter((r) => !HIDDEN_QUEUE_STATUSES.has(r.status)),
+    [requests]
+  );
+
   const filtered = useMemo(() => {
-    return requests
+    return visibleRequests
       .filter((r) => selectedTopic === "All" || r.topic === selectedTopic)
-      .filter((r) => !selectedArea || r.area === selectedArea)
       .filter((r) => status === "All" || r.status === status)
       .filter((r) => urgency === "All" || r.urgency === urgency)
       .filter(
@@ -34,9 +51,12 @@ export default function RequestQueue({ requests, selectedArea, selectedId, selec
           !search ||
           r.id.toLowerCase().includes(search.toLowerCase()) ||
           r.helpType.toLowerCase().includes(search.toLowerCase()) ||
+          r.area.toLowerCase().includes(search.toLowerCase()) ||
           r.assignedOrganisation.toLowerCase().includes(search.toLowerCase())
       );
-  }, [requests, selectedTopic, selectedArea, status, urgency, search]);
+  }, [visibleRequests, selectedTopic, status, urgency, search]);
+
+  const repeatNames = useMemo(() => repeatRecipientNames(visibleRequests), [visibleRequests]);
 
   const hasActiveFilters = selectedTopic !== "All" || status !== "All" || urgency !== "All" || search !== "";
 
@@ -47,15 +67,26 @@ export default function RequestQueue({ requests, selectedArea, selectedId, selec
     setSearch("");
   }
 
+  const showPartnerCol = org === "AIC";
+  const showOutcomeCol = org === "AIC";
+  const showFlagCol = org === "Pharmacy";
+
+  const openCount = visibleRequests.filter((r) => !["Unable To Fulfil", "Rerouted"].includes(r.status)).length;
+  const urgentCount = visibleRequests.filter(
+    (r) => r.urgency === "High" && !["Fulfilled", "Unable To Fulfil", "Rerouted"].includes(r.status)
+  ).length;
+
   return (
-    <div className="bg-white rounded-xl border border-slate-200 flex flex-col">
-      <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3 flex-wrap">
-        <div className="flex-1">
-          <h2 className="font-semibold text-slate-800 text-sm">
-            Request Queue
-            {selectedArea && <span className="ml-2 text-xs font-normal text-slate-400">— {selectedArea}</span>}
-          </h2>
-          <p className="text-xs text-slate-400">{filtered.length} requests</p>
+    <div className="bg-white rounded-xl border border-slate-200 flex flex-col h-full w-full min-h-0">
+      <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3 flex-wrap shrink-0">
+        <div className="flex-1 min-w-[160px]">
+          <h2 className="font-semibold text-slate-800 text-sm">Request Queue</h2>
+          <p className="text-xs text-slate-400 flex items-center gap-2">
+            <span>{filtered.length} shown</span>
+            <span className="text-slate-300">·</span>
+            <span className="text-blue-600 font-medium">{openCount} open</span>
+            <span className="text-red-600 font-medium">{urgentCount} urgent</span>
+          </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -83,59 +114,123 @@ export default function RequestQueue({ requests, selectedArea, selectedId, selec
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <div className="grid grid-cols-[72px_80px_1fr_90px_140px_1fr_100px] gap-2 px-4 py-2 bg-slate-50 border-b border-slate-100 text-xs font-medium text-slate-500 uppercase tracking-wide min-w-[620px]">
-          <span>ID</span>
-          <span>Topic</span>
-          <span>Help Type</span>
-          <span>Priority</span>
-          <span>Status</span>
-          <span>Assigned To</span>
-          <span>Submitted</span>
-        </div>
-
-        <div className="divide-y divide-slate-50 min-w-[620px]">
-          {filtered.length === 0 ? (
-            <div className="px-4 py-10 text-center">
-              <p className="text-sm text-slate-400">No requests match the current filters.</p>
-              {hasActiveFilters && (
-                <button onClick={clearFilters} className="mt-2 text-xs text-blue-600 hover:underline">
-                  Clear filters
-                </button>
-              )}
-            </div>
-          ) : (
-            filtered.map((req) => (
-              <button
-                key={req.id}
-                onClick={() => onSelect(req)}
-                className={cn(
-                  "w-full grid grid-cols-[72px_80px_1fr_90px_140px_1fr_100px] gap-2 px-4 py-3 text-left text-xs hover:bg-blue-50 transition-colors",
-                  selectedId === req.id && "bg-blue-50 ring-2 ring-inset ring-blue-400"
-                )}
-              >
-                <span className="font-mono text-slate-400 font-medium">{req.id}</span>
-                <span className="text-slate-500 truncate">{req.topic}</span>
-                <span className="text-slate-700 font-medium truncate">{req.helpType}</span>
-                <span>
-                  <span className={cn("font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap", urgencyColor(req.urgency))}>
-                    {req.urgency}
-                  </span>
-                </span>
-                <span>
-                  <span className={cn("font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap", statusColor(req.status))}>
-                    {req.status}
-                  </span>
-                </span>
-                <span className="text-slate-500 truncate">{req.assignedOrganisation}</span>
-                <span className="text-slate-400 whitespace-nowrap">{formatDateTime(req.submittedAt)}</span>
-              </button>
-            ))
-          )}
-        </div>
+      <div className="overflow-auto flex-1 min-h-0">
+        <table className="w-full text-xs min-w-[640px]">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase tracking-wide">
+              <Th>ID</Th>
+              {showFlagCol && <Th>Flag</Th>}
+              <Th>Topic</Th>
+              <Th>Help Type</Th>
+              <Th>Area</Th>
+              <Th>Priority</Th>
+              <Th>Status</Th>
+              {showPartnerCol && <Th>Partner Org</Th>}
+              <Th>Assigned To</Th>
+              {showOutcomeCol && <Th>Outcome</Th>}
+              <Th>Submitted</Th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={12} className="px-4 py-10 text-center">
+                  <p className="text-sm text-slate-400">No requests match the current filters.</p>
+                  {hasActiveFilters && (
+                    <button onClick={clearFilters} className="mt-2 text-xs text-blue-600 hover:underline">
+                      Clear filters
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ) : (
+              filtered.map((req) => {
+                const unassigned = isUnassigned(req);
+                const hiRisk = req.medications?.some((m) => m.highRisk) ?? false;
+                const isRepeat = showOutcomeCol && repeatNames.has(req.recipient.name);
+                return (
+                  <tr
+                    key={req.id}
+                    onClick={() => onSelect(req)}
+                    className={cn(
+                      "cursor-pointer hover:bg-blue-50 transition-colors",
+                      selectedId === req.id && "bg-blue-50 ring-2 ring-inset ring-blue-400",
+                      isRepeat && selectedId !== req.id && "bg-purple-50/60"
+                    )}
+                  >
+                    <Td className="font-mono text-slate-400 font-medium">
+                      <div className="flex items-center gap-1.5">
+                        {req.id}
+                        {isRepeat && (
+                          <span className="text-[9px] font-semibold px-1 py-0.5 rounded bg-purple-100 text-purple-700">
+                            Repeat
+                          </span>
+                        )}
+                      </div>
+                    </Td>
+                    {showFlagCol && (
+                      <Td>
+                        {hiRisk ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">
+                            <AlertTriangle size={10} /> High-risk
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </Td>
+                    )}
+                    <Td className="text-slate-500">{req.topic}</Td>
+                    <Td className="text-slate-700 font-medium">{req.helpType}</Td>
+                    <Td className="text-slate-500">{req.area}</Td>
+                    <Td>
+                      <span className={cn("font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap", urgencyColor(req.urgency))}>
+                        {req.urgency}
+                      </span>
+                    </Td>
+                    <Td>
+                      <span className={cn("font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap", statusColor(req.status))}>
+                        {req.status}
+                      </span>
+                    </Td>
+                    {showPartnerCol && (
+                      <Td>
+                        {unassigned ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                            <AlertTriangle size={10} /> Unassigned
+                          </span>
+                        ) : (
+                          <span className="text-slate-600">{req.assignedOrganisation}</span>
+                        )}
+                      </Td>
+                    )}
+                    <Td className="text-slate-500">{assignedToLabel(req, org)}</Td>
+                    {showOutcomeCol && (
+                      <Td className="text-slate-500 max-w-[220px]">
+                        {req.outcome ? (
+                          <span className="line-clamp-2">{req.outcome}</span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </Td>
+                    )}
+                    <Td className="text-slate-400 whitespace-nowrap">{formatDateTime(req.submittedAt)}</Td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
+}
+
+function Th({ children }: { children: React.ReactNode }) {
+  return <th className="text-left font-medium px-4 py-2">{children}</th>;
+}
+
+function Td({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <td className={cn("px-4 py-3 align-middle", className)}>{children}</td>;
 }
 
 function Pill<T extends string>({
