@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import type { Status, Urgency } from "./types";
+import type { CaseDomain, Status, Urgency } from "./types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -16,15 +16,31 @@ export function urgencyColor(urgency: Urgency): string {
 
 export function statusColor(status: Status): string {
   const map: Record<Status, string> = {
-    New: "bg-blue-100 text-blue-700",
-    Received: "bg-indigo-100 text-indigo-700",
-    Accepted: "bg-violet-100 text-violet-700",
-    "In Progress": "bg-amber-100 text-amber-700",
-    Fulfilled: "bg-green-100 text-green-700",
-    "Unable To Fulfil": "bg-red-100 text-red-700",
-    Rerouted: "bg-slate-100 text-slate-600",
+    New: "bg-blue-600 text-white",
+    Received: "bg-sky-600 text-white",
+    Accepted: "bg-emerald-600 text-white",
+    "In Progress": "bg-orange-500 text-white",
+    Fulfilled: "bg-emerald-600 text-white",
+    "Unable To Fulfil": "bg-red-600 text-white",
+    Rerouted: "bg-slate-600 text-white",
   };
   return map[status];
+}
+
+export function caseDomainLabel(domain: CaseDomain): string {
+  return {
+    A: "Psycho-social constraints",
+    B: "Medical complexities",
+    C: "Functional impairment",
+  }[domain];
+}
+
+export function caseDomainColor(domain: CaseDomain): string {
+  return {
+    A: "bg-purple-50 text-purple-700 border-purple-100",
+    B: "bg-rose-50 text-rose-700 border-rose-100",
+    C: "bg-cyan-50 text-cyan-700 border-cyan-100",
+  }[domain];
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

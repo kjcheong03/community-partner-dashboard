@@ -1,6 +1,7 @@
 import type { HelpRequest } from "./types";
 import type { OrgId } from "./orgs";
 import { areaMarkers } from "@/data/areaMarkers";
+import { availableSlots, availableUnits, lowStockItems } from "@/data/agencyReadiness";
 
 const CLOSED = new Set(["Fulfilled", "Unable To Fulfil", "Rerouted"]);
 
@@ -52,37 +53,37 @@ export function statCards(org: OrgId, requests: HelpRequest[]): StatCard[] {
   if (org === "AIC") {
     const flagged = requests.filter((r) => r.flaggedForCareReview);
     return [
-      { label: "Total incidents", value: requests.length, accent: "blue", hint: "across all partners" },
+      { label: "AAC units available", value: availableUnits("AIC"), accent: "green", hint: "emergency response" },
+      { label: "Low-stock supplies", value: lowStockItems().length, accent: "amber", hint: "reorder watch" },
+      { label: "Active care reviews", value: flagged.filter(isOpen).length, accent: "purple" },
       { label: "High priority", value: open.filter((r) => r.urgency === "High").length, accent: "red" },
-      { label: "Repeat households", value: repeatRecipientNames(requests).size, accent: "amber", hint: "2+ requests" },
-      { label: "Open care reviews", value: flagged.filter(isOpen).length, accent: "purple" },
     ];
   }
 
   if (org === "SGCares") {
     return [
-      { label: "Volunteer requests", value: open.length, accent: "blue" },
-      { label: "Supplies drops", value: open.filter((r) => r.helpType === "Supplies & Networks").length, accent: "teal" },
-      { label: "Welfare checks", value: open.filter((r) => r.helpType === "Welfare Check").length, accent: "purple" },
-      { label: "Unassigned unit", value: unassigned(open).length, accent: "amber" },
+      { label: "Active volunteers", value: availableSlots("SGCares"), accent: "blue", hint: "available now" },
+      { label: "Unassigned cases", value: unassigned(open).length, accent: "amber", hint: "needs team" },
+      { label: "Language support", value: open.filter((r) => r.riskFactors.includes("Language Support Needed")).length, accent: "purple" },
+      { label: "Domain A cases", value: open.filter((r) => r.caseDomain === "A").length, accent: "red", hint: "psycho-social" },
     ];
   }
 
   if (org === "AACSGO") {
     return [
-      { label: "Outreach cases", value: open.length, accent: "purple" },
+      { label: "Outreach slots", value: availableSlots("AACSGO"), accent: "purple", hint: "available now" },
       { label: "Living alone", value: open.filter((r) => r.riskFactors.includes("Living Alone")).length, accent: "amber" },
       { label: "Care navigation", value: open.filter((r) => r.helpType === "Care Referral / Navigation").length, accent: "blue" },
-      { label: "High priority", value: open.filter((r) => r.urgency === "High").length, accent: "red" },
+      { label: "Domain A cases", value: open.filter((r) => r.caseDomain === "A").length, accent: "red", hint: "isolation/caregiver" },
     ];
   }
 
   if (org === "SSOFSC") {
     return [
-      { label: "Basic-needs cases", value: open.length, accent: "green" },
-      { label: "Supplies support", value: open.filter((r) => r.helpType === "Supplies & Networks").length, accent: "teal" },
-      { label: "Food support", value: open.filter((r) => r.helpType === "Food & Meal Support").length, accent: "amber" },
-      { label: "Unassigned unit", value: unassigned(open).length, accent: "red" },
+      { label: "Casework teams", value: availableUnits("SSOFSC"), accent: "green", hint: "available units" },
+      { label: "Urgent basic needs", value: open.filter((r) => r.urgency === "High").length, accent: "red" },
+      { label: "Food / vouchers", value: open.filter((r) => r.helpType === "Food & Meal Support").length, accent: "amber" },
+      { label: "Unassigned cases", value: unassigned(open).length, accent: "purple" },
     ];
   }
 

@@ -47,10 +47,10 @@ export default function EmergencyTopics({ org, requests, topics, selectedTopic, 
   const linkedTotal = summaries.reduce((sum, s) => sum + s.linked.length, 0);
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 px-3 py-2">
-      <div className="flex items-center gap-2 flex-wrap">
+    <div className="bg-white rounded-lg border border-slate-200 px-4 py-3 shadow-sm">
+      <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-500 shrink-0">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-100 bg-white text-red-500 shrink-0">
             <Siren size={15} />
           </span>
           <div className="min-w-0">
@@ -65,7 +65,7 @@ export default function EmergencyTopics({ org, requests, topics, selectedTopic, 
           value={selectedTopic}
           onChange={(e) => onSelectTopic(e.target.value as "All" | Topic)}
           className={cn(
-            "h-8 min-w-[190px] rounded-lg border px-2 text-xs font-medium bg-white focus:outline-none focus:ring-1 focus:ring-blue-400",
+            "h-8 min-w-[190px] rounded-md border px-2 text-xs font-medium bg-white shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-400",
             selectedTopic === "All" ? "border-slate-200 text-slate-500" : "border-blue-300 text-blue-700 bg-blue-50"
           )}
         >
@@ -80,7 +80,7 @@ export default function EmergencyTopics({ org, requests, topics, selectedTopic, 
         {selectedSummary && (
           <button
             onClick={() => onSelectTopic("All")}
-            className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+            className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 px-2 text-xs font-medium text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-700"
           >
             <X size={12} /> Clear
           </button>
@@ -88,7 +88,7 @@ export default function EmergencyTopics({ org, requests, topics, selectedTopic, 
 
         <button
           onClick={() => setShowDetails((prev) => !prev)}
-          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 px-2.5 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50"
           aria-expanded={showDetails}
         >
           Details {showDetails ? <ChevronUp size={13} /> : <ChevronDown size={13} />}

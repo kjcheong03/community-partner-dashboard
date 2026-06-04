@@ -4,7 +4,7 @@ import { X, ChevronDown, AlertTriangle, User, HeartPulse, MapPin, Flag, Building
 import type { HelpRequest, Status } from "@/lib/types";
 import type { OrgId } from "@/lib/orgs";
 import { getOrg, teamsForOrg } from "@/lib/orgs";
-import { cn, urgencyColor, statusColor } from "@/lib/utils";
+import { caseDomainColor, caseDomainLabel, cn, urgencyColor, statusColor } from "@/lib/utils";
 import { nearestFacility, ownFacilities, clinics, ownFacilityLabel } from "@/data/facilities";
 import ActivityTimeline from "./ActivityTimeline";
 
@@ -88,7 +88,7 @@ export default function RequestDetailDrawer({ request, org, onClose, onUpdate }:
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-mono text-xs text-slate-400">{request.id}</span>
-              <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full", statusColor(request.status))}>
+              <span className={cn("rounded-md px-2 py-1 text-xs font-semibold shadow-sm", statusColor(request.status))}>
                 {request.status}
               </span>
               <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full", urgencyColor(request.urgency))}>
@@ -166,6 +166,15 @@ export default function RequestDetailDrawer({ request, org, onClose, onUpdate }:
               </div>
             </Section>
           )}
+
+          <Section title="Case Domain">
+            <div className="flex items-start gap-2">
+              <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold", caseDomainColor(request.caseDomain))}>
+                Domain {request.caseDomain}
+              </span>
+              <p className="text-sm text-slate-600 leading-relaxed">{caseDomainLabel(request.caseDomain)}</p>
+            </div>
+          </Section>
 
           {request.riskFactors.length > 0 && (
             <Section title="Risk Factors">

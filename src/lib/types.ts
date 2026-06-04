@@ -1,5 +1,6 @@
 export type Topic = "COVID-19" | "Dengue" | "Haze";
 export type Urgency = "Low" | "Medium" | "High";
+export type CaseDomain = "A" | "B" | "C";
 export type Status =
   | "New"
   | "Received"
@@ -43,6 +44,7 @@ export type HelpRequest = {
   area: string;
   topic: Topic;
   helpType: HelpType;
+  caseDomain: CaseDomain;
   urgency: Urgency;
   status: Status;
   riskFactors: string[];

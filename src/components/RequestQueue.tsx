@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { Search, X, AlertTriangle } from "lucide-react";
 import type { HelpRequest, Topic, Status, Urgency } from "@/lib/types";
 import type { OrgId } from "@/lib/orgs";
-import { cn, urgencyColor, statusColor, formatDateTime } from "@/lib/utils";
+import { caseDomainColor, caseDomainLabel, cn, urgencyColor, statusColor, formatDateTime } from "@/lib/utils";
 import { repeatRecipientNames } from "@/lib/analytics";
 
 type Props = {
@@ -113,11 +113,12 @@ export default function RequestQueue({ org, requests, selectedId, selectedTopic,
       </div>
 
       <div className="overflow-auto flex-1 min-h-0">
-        <table className="w-full text-xs min-w-[640px]">
+        <table className="w-full text-xs min-w-[760px]">
           <thead className="sticky top-0 z-10">
-              <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase tracking-wide">
+            <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase tracking-wide">
               <Th>ID</Th>
               <Th>Topic</Th>
+              <Th>Domain</Th>
               <Th>Help Type</Th>
               <Th>Area</Th>
               <Th>Priority</Th>
@@ -165,6 +166,12 @@ export default function RequestQueue({ org, requests, selectedId, selectedTopic,
                       </div>
                     </Td>
                     <Td className="text-slate-500">{req.topic}</Td>
+                    <Td>
+                      <span className={cn("inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap", caseDomainColor(req.caseDomain))}>
+                        {req.caseDomain}
+                        <span className="hidden xl:inline font-medium">{caseDomainLabel(req.caseDomain)}</span>
+                      </span>
+                    </Td>
                     <Td className="text-slate-700 font-medium">{req.helpType}</Td>
                     <Td className="text-slate-500">{req.area}</Td>
                     <Td>
@@ -173,7 +180,7 @@ export default function RequestQueue({ org, requests, selectedId, selectedTopic,
                       </span>
                     </Td>
                     <Td>
-                      <span className={cn("font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap", statusColor(req.status))}>
+                      <span className={cn("inline-flex min-w-[72px] justify-center rounded-md px-2 py-1 text-[11px] font-semibold whitespace-nowrap shadow-sm", statusColor(req.status))}>
                         {req.status}
                       </span>
                     </Td>

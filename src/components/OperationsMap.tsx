@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import L from "leaflet";
-import { MapContainer, TileLayer, Marker, Tooltip, Popup, Polyline } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Tooltip, Popup, Polyline, useMap } from "react-leaflet";
 import type { HelpRequest } from "@/lib/types";
 import type { OrgId } from "@/lib/orgs";
 import { getOrg } from "@/lib/orgs";
 import { facilitiesForOrg, ownFacilities, areaLatLng, FACILITY_LABEL, ownFacilityLabel, type Facility, type FacilityType } from "@/data/facilities";
-import { cn, statusColor, urgencyColor } from "@/lib/utils";
+import { caseDomainColor, cn, statusColor, urgencyColor } from "@/lib/utils";
 import "leaflet/dist/leaflet.css";
 
 const MAPBOX_ACCESS_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -38,9 +38,9 @@ const CLOSED = new Set(["Fulfilled", "Unable To Fulfil", "Rerouted"]);
 const FACILITY_STYLE: Record<FacilityType, { bg: string; glyph: string }> = {
   hub: { bg: "#1e3a8a", glyph: "AIC" },
   office: { bg: "#4f46e5", glyph: "VC" },
-  outreach: { bg: "#7e22ce", glyph: "SGO" },
-  support: { bg: "#15803d", glyph: "SSO" },
-  care: { bg: "#0d9488", glyph: "Care" },
+  outreach: { bg: "#7e22ce", glyph: "SG" },
+  support: { bg: "#15803d", glyph: "SS" },
+  care: { bg: "#0d9488", glyph: "CS" },
   clinic: { bg: "#be123c", glyph: "+" },
 };
 
@@ -51,8 +51,8 @@ function facilityIcon(f: Facility, opts: { assigned?: boolean; target?: boolean 
   const border = opts.assigned ? "3px solid #1e40af" : opts.target ? "3px dashed #1e40af" : "2px solid #fff";
   return L.divIcon({
     html: `<div style="
-      min-width:${size}px;height:${size}px;padding:0 5px;border-radius:6px;
-      background:${bg};color:#fff;font:700 ${big ? 11 : 10}px/${size - 6}px system-ui;text-align:center;
+      width:${size}px;height:${size}px;border-radius:6px;box-sizing:border-box;overflow:hidden;white-space:nowrap;
+      background:${bg};color:#fff;font:700 ${big ? 10 : 9}px/${size - 6}px system-ui;text-align:center;
       border:${border};box-shadow:0 1px 4px rgba(0,0,0,.4);
     ">${glyph}</div>`,
     iconSize: [size, size],
@@ -108,6 +108,30 @@ function caseSort(a: HelpRequest, b: HelpRequest) {
   const urgencyDelta = urgencyRank[a.urgency] - urgencyRank[b.urgency];
   if (urgencyDelta !== 0) return urgencyDelta;
   return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
+}
+
+function domainCounts(requests: HelpRequest[]) {
+  return {
+    A: requests.filter((r) => r.caseDomain === "A").length,
+    B: requests.filter((r) => r.caseDomain === "B").length,
+    C: requests.filter((r) => r.caseDomain === "C").length,
+  };
+}
+
+function ResizeWatcher() {
+  const map = useMap();
+
+  useEffect(() => {
+    const container = map.getContainer();
+    const observer = new ResizeObserver(() => {
+      map.invalidateSize({ animate: false });
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [map]);
+
+  return null;
 }
 
 export default function OperationsMap({ org, requests, selectedId, onSelectRequest, selectedRequest, onRoute }: Props) {
@@ -178,6 +202,8 @@ export default function OperationsMap({ org, requests, selectedId, onSelectReque
           zoomControl
           scrollWheelZoom
         >
+          <ResizeWatcher />
+
           <TileLayer
             url={MAPBOX_TILE_URL}
             attribution={MAPBOX_ACCESS_TOKEN ? MAPBOX_ATTRIBUTION : OSM_ATTRIBUTION}
@@ -257,6 +283,7 @@ export default function OperationsMap({ org, requests, selectedId, onSelectReque
             const selected = group.requests.some((req) => req.id === selectedId);
             const tone = areaTone(group.requests);
             const highCount = group.requests.filter((req) => req.urgency === "High" && !CLOSED.has(req.status)).length;
+            const domains = domainCounts(group.requests);
             const sortedRequests = [...group.requests].sort(caseSort);
             return (
               <Marker
@@ -276,6 +303,8 @@ export default function OperationsMap({ org, requests, selectedId, onSelectReque
                     <br />
                     {group.requests.length} case{group.requests.length === 1 ? "" : "s"} · {tone.label}
                     {highCount > 0 ? ` · ${highCount} high priority` : ""}
+                    <br />
+                    A/B/C · {domains.A}/{domains.B}/{domains.C}
                   </div>
                 </Tooltip>
                 <Popup maxWidth={280}>
@@ -286,6 +315,9 @@ export default function OperationsMap({ org, requests, selectedId, onSelectReque
                         <p className="mt-0.5 text-slate-500">
                           {group.requests.length} case{group.requests.length === 1 ? "" : "s"} in this area
                         </p>
+                        <p className="mt-0.5 text-slate-500">
+                          {highCount} high-priority case{highCount === 1 ? "" : "s"}
+                        </p>
                       </div>
                       <span
                         className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
@@ -295,6 +327,14 @@ export default function OperationsMap({ org, requests, selectedId, onSelectReque
                       </span>
                     </div>
                     <div className="space-y-1.5">
+                      <div className="grid grid-cols-3 gap-1.5 pb-1">
+                        {(["A", "B", "C"] as const).map((domain) => (
+                          <div key={domain} className={cn("rounded-md border px-2 py-1", caseDomainColor(domain))}>
+                            <p className="text-[10px] font-semibold">Domain {domain}</p>
+                            <p className="text-sm font-bold leading-none">{domains[domain]}</p>
+                          </div>
+                        ))}
+                      </div>
                       {sortedRequests.map((req) => (
                         <button
                           key={req.id}
@@ -315,7 +355,10 @@ export default function OperationsMap({ org, requests, selectedId, onSelectReque
                           <span className="mt-1 block text-slate-600">{req.helpType}</span>
                           <span className="mt-1 flex items-center justify-between gap-2">
                             <span className="truncate text-slate-400">{req.recipient.name}</span>
-                            <span className={cn("shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium", statusColor(req.status))}>
+                            <span className={cn("shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium", caseDomainColor(req.caseDomain))}>
+                              {req.caseDomain}
+                            </span>
+                            <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold", statusColor(req.status))}>
                               {req.status}
                             </span>
                           </span>
