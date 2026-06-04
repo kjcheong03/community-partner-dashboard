@@ -16,7 +16,7 @@ type Props = {
   onSelect: (req: HelpRequest) => void;
 };
 
-const TOPICS: ("All" | Topic)[] = ["All", "COVID-19", "Dengue"];
+const TOPICS: ("All" | Topic)[] = ["All", "COVID-19", "Dengue", "Haze"];
 const STATUSES: ("All" | Status)[] = ["All", "New", "Received", "Accepted", "In Progress", "Unable To Fulfil", "Rerouted"];
 const URGENCIES: ("All" | Urgency)[] = ["All", "High", "Medium", "Low"];
 const HIDDEN_QUEUE_STATUSES = new Set<Status>(["Fulfilled"]);
@@ -26,9 +26,8 @@ function isUnassigned(r: HelpRequest) {
 }
 
 function assignedToLabel(r: HelpRequest, org: OrgId) {
-  if (org === "Pharmacy") return r.pharmacyBranch ?? "Unrouted";
-  if (org === "AIC") return r.assignedTeam ?? r.pharmacyBranch ?? "—";
-  return r.assignedTeam ?? r.assignedCentre ?? "Unassigned";
+  if (org === "AIC") return r.assignedUnit ?? r.assignedTeam ?? "—";
+  return r.assignedTeam ?? r.assignedUnit ?? "Unassigned";
 }
 
 export default function RequestQueue({ org, requests, selectedId, selectedTopic, onSelectTopic, onSelect }: Props) {
@@ -69,7 +68,6 @@ export default function RequestQueue({ org, requests, selectedId, selectedTopic,
 
   const showPartnerCol = org === "AIC";
   const showOutcomeCol = org === "AIC";
-  const showFlagCol = org === "Pharmacy";
 
   const openCount = visibleRequests.filter((r) => !["Unable To Fulfil", "Rerouted"].includes(r.status)).length;
   const urgentCount = visibleRequests.filter(
@@ -117,16 +115,15 @@ export default function RequestQueue({ org, requests, selectedId, selectedTopic,
       <div className="overflow-auto flex-1 min-h-0">
         <table className="w-full text-xs min-w-[640px]">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase tracking-wide">
+              <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase tracking-wide">
               <Th>ID</Th>
-              {showFlagCol && <Th>Flag</Th>}
               <Th>Topic</Th>
               <Th>Help Type</Th>
               <Th>Area</Th>
               <Th>Priority</Th>
               <Th>Status</Th>
               {showPartnerCol && <Th>Partner Org</Th>}
-              <Th>Assigned To</Th>
+              <Th>Assigned Unit / Team</Th>
               {showOutcomeCol && <Th>Outcome</Th>}
               <Th>Submitted</Th>
             </tr>
@@ -146,7 +143,6 @@ export default function RequestQueue({ org, requests, selectedId, selectedTopic,
             ) : (
               filtered.map((req) => {
                 const unassigned = isUnassigned(req);
-                const hiRisk = req.medications?.some((m) => m.highRisk) ?? false;
                 const isRepeat = showOutcomeCol && repeatNames.has(req.recipient.name);
                 return (
                   <tr
@@ -168,17 +164,6 @@ export default function RequestQueue({ org, requests, selectedId, selectedTopic,
                         )}
                       </div>
                     </Td>
-                    {showFlagCol && (
-                      <Td>
-                        {hiRisk ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">
-                            <AlertTriangle size={10} /> High-risk
-                          </span>
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
-                      </Td>
-                    )}
                     <Td className="text-slate-500">{req.topic}</Td>
                     <Td className="text-slate-700 font-medium">{req.helpType}</Td>
                     <Td className="text-slate-500">{req.area}</Td>

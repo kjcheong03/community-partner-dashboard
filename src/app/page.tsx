@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import type { HelpRequest, Topic } from "@/lib/types";
 import { mockRequests } from "@/data/mockRequests";
 import { emergencyTopics } from "@/data/emergencyTopics";
-import { requestsForOrg, type OrgId } from "@/lib/orgs";
+import { getOrg, requestsForOrg, type OrgId } from "@/lib/orgs";
 import type { Facility } from "@/data/facilities";
 import TopNav from "@/components/TopNav";
 import EmergencyTopics from "@/components/EmergencyTopics";
@@ -38,15 +38,14 @@ export default function DashboardPage() {
   }
 
   function handleRoute(req: HelpRequest, facility: Facility) {
-    const field = org === "Pharmacy" ? "pharmacyBranch" : "assignedCentre";
-    const label = org === "Pharmacy" ? "pharmacy branch" : "volunteer centre";
     handleUpdate(req.id, {
-      [field]: facility.name,
+      assignedUnit: facility.name,
+      assignedOrganisation: org === "AIC" ? req.assignedOrganisation : getOrg(org).name,
       activityLog: [
         ...req.activityLog,
         {
           timestamp: new Date().toISOString(),
-          action: `Routed to ${label}: ${facility.name}`,
+          action: `Routed to assigned unit: ${facility.name}`,
           actor: org,
         },
       ],

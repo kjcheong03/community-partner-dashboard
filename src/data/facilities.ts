@@ -1,7 +1,7 @@
 import type { OrgId } from "@/lib/orgs";
 import { areaMarkers } from "./areaMarkers";
 
-export type FacilityType = "hub" | "office" | "branch" | "clinic";
+export type FacilityType = "hub" | "office" | "outreach" | "support" | "care" | "clinic";
 
 export type Facility = {
   id: string;
@@ -29,13 +29,29 @@ const SGCARES_OFFICES: Facility[] = [
   { id: "VC-TPY", name: "SG Cares VC @ Toa Payoh", type: "office", lat: 1.334, lng: 103.849, region: "Central", info: "Advisory-assistance & translation support team.", hours: "Mon–Sat 9am–6pm" },
 ];
 
-// Pharmacy partner branches (shown for the Pharmacy view; names match PHARMACY_BRANCHES).
-const PHARMACY_BRANCHES: Facility[] = [
-  { id: "RX-TPE", name: "Pharmacy Partner @ Tampines", type: "branch", lat: 1.353, lng: 103.945, region: "East", info: "Cold-chain capable. Pharmacist on duty for high-risk sign-off.", hours: "Daily 9am–9pm" },
-  { id: "RX-BDK", name: "Pharmacy Partner @ Bedok", type: "branch", lat: 1.324, lng: 103.93, region: "East", info: "Controlled-drug dispensing. ID verification required.", hours: "Daily 9am–9pm" },
-  { id: "RX-AMK", name: "Pharmacy Partner @ Ang Mo Kio", type: "branch", lat: 1.369, lng: 103.846, region: "Central", info: "Cold-chain insulin stock. Delivery riders based here.", hours: "Daily 9am–9pm" },
-  { id: "RX-JUR", name: "Pharmacy Partner @ Jurong", type: "branch", lat: 1.333, lng: 103.742, region: "West", info: "West-zone collection point. Low controlled-drug stock today.", hours: "Daily 9am–9pm" },
-  { id: "RX-TPY", name: "Pharmacy Partner @ Toa Payoh", type: "branch", lat: 1.334, lng: 103.849, region: "Central", info: "Central collection point. Pharmacist sign-off available.", hours: "Daily 9am–9pm" },
+// AAC / Silver Generation Office outreach points for senior welfare follow-ups.
+const AAC_SGO_OUTREACH: Facility[] = [
+  { id: "AAC-BDK", name: "AAC/SGO Outreach @ Bedok", type: "outreach", lat: 1.324, lng: 103.93, region: "East", info: "Befriending, senior outreach, and care-referral follow-up.", hours: "Mon–Sat 9am–6pm" },
+  { id: "AAC-TPE", name: "AAC/SGO Outreach @ Tampines", type: "outreach", lat: 1.354, lng: 103.943, region: "East", info: "Senior check-ins and emergency alert follow-up.", hours: "Mon–Sat 9am–6pm" },
+  { id: "AAC-AMK", name: "AAC/SGO Outreach @ Ang Mo Kio", type: "outreach", lat: 1.369, lng: 103.846, region: "Central", info: "Silver Generation Ambassador dispatch and AAC referrals.", hours: "Mon–Sat 9am–6pm" },
+  { id: "AAC-TPY", name: "AAC/SGO Outreach @ Toa Payoh", type: "outreach", lat: 1.334, lng: 103.849, region: "Central", info: "Befriending team with language-support roster.", hours: "Mon–Sat 9am–6pm" },
+  { id: "AAC-YIS", name: "AAC/SGO Outreach @ Yishun", type: "outreach", lat: 1.428, lng: 103.84, region: "North-East", info: "North-zone outreach and care-navigation follow-up.", hours: "Mon–Sat 9am–6pm" },
+];
+
+// Social Service Office / Family Service Centre support touchpoints.
+const SSO_FSC_SUPPORT: Facility[] = [
+  { id: "SSO-BDK", name: "SSO/FSC Support @ Bedok", type: "support", lat: 1.325, lng: 103.93, region: "East", info: "Urgent basic-needs triage, food rations, and voucher support.", hours: "Mon–Fri 9am–6pm" },
+  { id: "SSO-AMK", name: "SSO/FSC Support @ Ang Mo Kio", type: "support", lat: 1.37, lng: 103.846, region: "Central", info: "ComCare intake and FSC casework referral.", hours: "Mon–Fri 9am–6pm" },
+  { id: "SSO-JUR", name: "SSO/FSC Support @ Jurong", type: "support", lat: 1.333, lng: 103.742, region: "West", info: "Social support desk for lower-income households.", hours: "Mon–Fri 9am–6pm" },
+  { id: "SSO-TPY", name: "SSO/FSC Support @ Toa Payoh", type: "support", lat: 1.334, lng: 103.849, region: "Central", info: "Family casework and community partner liaison.", hours: "Mon–Fri 9am–6pm" },
+];
+
+// AIC Care Services touchpoints for Meals on Wheels, MET, and care navigation.
+const AIC_CARE_SERVICES: Facility[] = [
+  { id: "CARE-MAX", name: "AIC Care Services @ Maxwell", type: "care", lat: 1.28, lng: 103.844, region: "Central", info: "AIC Link advice, care-navigation, MOW, and MET triage.", hours: "Mon–Fri 8.30am–8.30pm" },
+  { id: "CARE-TPE", name: "AIC Care Services @ Tampines", type: "care", lat: 1.353, lng: 103.945, region: "East", info: "East-zone Meals on Wheels and care-services coordination.", hours: "Mon–Sat 9am–5pm" },
+  { id: "CARE-JUR", name: "AIC Care Services @ Jurong", type: "care", lat: 1.333, lng: 103.742, region: "West", info: "West-zone MET and care-services coordination.", hours: "Mon–Sat 9am–5pm" },
+  { id: "CARE-AMK", name: "AIC Care Services @ Ang Mo Kio", type: "care", lat: 1.369, lng: 103.846, region: "Central", info: "Care navigation and appointment transport coordination.", hours: "Mon–Sat 9am–5pm" },
 ];
 
 // Polyclinics & hospitals relevant to every org (referral / escalation points).
@@ -52,7 +68,9 @@ const CLINICS: Facility[] = [
 const OWN_FACILITIES: Record<OrgId, Facility[]> = {
   AIC: AIC_HUBS,
   SGCares: SGCARES_OFFICES,
-  Pharmacy: PHARMACY_BRANCHES,
+  AACSGO: AAC_SGO_OUTREACH,
+  SSOFSC: SSO_FSC_SUPPORT,
+  AICCare: AIC_CARE_SERVICES,
 };
 
 export function ownFacilities(org: OrgId): Facility[] {
@@ -71,13 +89,19 @@ export function facilitiesForOrg(org: OrgId): Facility[] {
 export const FACILITY_LABEL: Record<FacilityType, string> = {
   hub: "AIC Hub",
   office: "Volunteer Centre",
-  branch: "Pharmacy Branch",
+  outreach: "AAC/SGO Outreach",
+  support: "SSO/FSC Support",
+  care: "AIC Care Services",
   clinic: "Clinic / Hospital",
 };
 
 // Label for an org's own facility type (used in "nearest ___" context).
 export function ownFacilityLabel(org: OrgId): string {
-  return org === "AIC" ? "AIC hub" : org === "SGCares" ? "volunteer centre" : "pharmacy branch";
+  if (org === "AIC") return "AIC hub";
+  if (org === "SGCares") return "volunteer centre";
+  if (org === "AACSGO") return "AAC/SGO outreach point";
+  if (org === "SSOFSC") return "SSO/FSC support point";
+  return "AIC care services point";
 }
 
 export function areaLatLng(area: string): { lat: number; lng: number } | null {

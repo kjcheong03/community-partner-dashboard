@@ -6,9 +6,18 @@ import { MapContainer, TileLayer, Marker, Tooltip, Popup, Polyline } from "react
 import type { HelpRequest } from "@/lib/types";
 import type { OrgId } from "@/lib/orgs";
 import { getOrg } from "@/lib/orgs";
-import { facilitiesForOrg, ownFacilities, areaLatLng, FACILITY_LABEL, type Facility, type FacilityType } from "@/data/facilities";
+import { facilitiesForOrg, ownFacilities, areaLatLng, FACILITY_LABEL, ownFacilityLabel, type Facility, type FacilityType } from "@/data/facilities";
 import { cn, statusColor, urgencyColor } from "@/lib/utils";
 import "leaflet/dist/leaflet.css";
+
+const MAPBOX_ACCESS_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+const MAPBOX_TILE_URL = MAPBOX_ACCESS_TOKEN
+  ? `https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/512/{z}/{x}/{y}@2x?access_token=${MAPBOX_ACCESS_TOKEN}`
+  : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+const MAPBOX_ATTRIBUTION =
+  '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>';
+const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+const MAP_RENDER_VERSION = Date.now().toString(36);
 
 type Props = {
   org: OrgId;
@@ -21,9 +30,7 @@ type Props = {
 
 // Which facility field a partner org routes a request to.
 function assignedFacilityName(org: OrgId, r: HelpRequest): string | undefined {
-  if (org === "Pharmacy") return r.pharmacyBranch;
-  if (org === "SGCares") return r.assignedCentre;
-  return undefined;
+  return org === "AIC" ? undefined : r.assignedUnit;
 }
 
 const CLOSED = new Set(["Fulfilled", "Unable To Fulfil", "Rerouted"]);
@@ -31,7 +38,9 @@ const CLOSED = new Set(["Fulfilled", "Unable To Fulfil", "Rerouted"]);
 const FACILITY_STYLE: Record<FacilityType, { bg: string; glyph: string }> = {
   hub: { bg: "#1e3a8a", glyph: "AIC" },
   office: { bg: "#4f46e5", glyph: "VC" },
-  branch: { bg: "#0d9488", glyph: "Rx" },
+  outreach: { bg: "#7e22ce", glyph: "SGO" },
+  support: { bg: "#15803d", glyph: "SSO" },
+  care: { bg: "#0d9488", glyph: "Care" },
   clinic: { bg: "#be123c", glyph: "+" },
 };
 
@@ -124,21 +133,22 @@ export default function OperationsMap({ org, requests, selectedId, onSelectReque
   const openCount = requests.filter((r) => !CLOSED.has(r.status)).length;
 
   // Routing mode: a request is selected and this org can route it.
-  const canRoute = (org === "Pharmacy" || org === "SGCares") && !!onRoute;
+  const canRoute = org !== "AIC" && !!onRoute;
   const routingReq = canRoute ? selectedRequest ?? null : null;
   const ownIds = useMemo(() => new Set(ownFacilities(org).map((f) => f.id)), [org]);
   const assignedName = routingReq ? assignedFacilityName(org, routingReq) : undefined;
   const selectedPos = routingReq ? areaLatLng(routingReq.area) : null;
   const assignedFacility = assignedName ? facilities.find((f) => f.name === assignedName) ?? null : null;
+  const mapKey = `${org}-${MAP_RENDER_VERSION}`;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 flex flex-col h-full min-h-[360px]">
+    <div className="bg-white rounded-xl border border-slate-200 flex flex-col h-full min-h-[360px] w-full">
       <div className="px-4 py-3 border-b border-slate-100 flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h2 className="font-semibold text-slate-800 text-sm">Operations Map — {orgConfig.shortName}</h2>
           {routingReq ? (
             <p className="text-xs text-blue-600 mt-0.5 font-medium">
-              Routing {routingReq.id} · click a {org === "Pharmacy" ? "pharmacy branch" : "volunteer centre"} marker to assign
+              Routing {routingReq.id} · click a {ownFacilityLabel(org)} marker to assign
               {assignedFacility ? ` · now: ${assignedFacility.name}` : ""}
             </p>
           ) : (
@@ -154,13 +164,14 @@ export default function OperationsMap({ org, requests, selectedId, onSelectReque
           <Legend color={AREA_TONE.high.color} label="High priority" />
           <Legend color={AREA_TONE.resolved.color} label="Resolved" />
           <span className="text-slate-300">|</span>
-          <FacilityLegend type={org === "AIC" ? "hub" : org === "SGCares" ? "office" : "branch"} />
+          <FacilityLegend type={ownFacilities(org)[0]?.type ?? "hub"} />
           <FacilityLegend type="clinic" />
         </div>
       </div>
 
       <div className="flex-1 min-h-0 rounded-b-xl overflow-hidden">
         <MapContainer
+          key={mapKey}
           center={[1.345, 103.84]}
           zoom={11}
           style={{ height: "100%", width: "100%" }}
@@ -168,9 +179,11 @@ export default function OperationsMap({ org, requests, selectedId, onSelectReque
           scrollWheelZoom
         >
           <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url={MAPBOX_TILE_URL}
+            attribution={MAPBOX_ACCESS_TOKEN ? MAPBOX_ATTRIBUTION : OSM_ATTRIBUTION}
             maxZoom={18}
+            tileSize={MAPBOX_ACCESS_TOKEN ? 512 : 256}
+            zoomOffset={MAPBOX_ACCESS_TOKEN ? -1 : 0}
           />
 
           {/* Connector line from the selected request to its assigned facility */}

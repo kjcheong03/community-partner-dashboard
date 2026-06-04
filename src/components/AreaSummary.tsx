@@ -28,12 +28,12 @@ export default function AreaSummary({ area, requests, selectedTopic }: Props) {
 
   // Capacity warnings
   const warnings: string[] = [];
-  if (open.filter((r) => r.helpType === "Transport Support").length >= 1)
-    warnings.push("Transport demand active");
+  if (open.filter((r) => r.helpType === "Clinic Transport Help").length >= 1)
+    warnings.push("Clinic transport demand active");
   if (open.filter((r) => r.helpType === "Welfare Check").length >= 1)
     warnings.push("Welfare checks in queue");
-  if (open.filter((r) => r.helpType === "Medication Collection").length >= 2)
-    warnings.push("Medication collection backlog");
+  if (open.filter((r) => r.helpType === "Supplies & Networks").length >= 2)
+    warnings.push("Supplies requests building up");
   if (open.filter((r) => r.urgency === "High").length >= 2)
     warnings.push("Multiple high-priority requests");
 

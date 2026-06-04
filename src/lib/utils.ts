@@ -27,19 +27,6 @@ export function statusColor(status: Status): string {
   return map[status];
 }
 
-export function medicationCategoryColor(category: string): string {
-  const map: Record<string, string> = {
-    Anticoagulant: "bg-red-50 text-red-700 border-red-200",
-    Insulin: "bg-purple-50 text-purple-700 border-purple-200",
-    "Controlled Drug": "bg-rose-50 text-rose-700 border-rose-200",
-    Antihypertensive: "bg-blue-50 text-blue-700 border-blue-200",
-    Antidiabetic: "bg-indigo-50 text-indigo-700 border-indigo-200",
-    Respiratory: "bg-cyan-50 text-cyan-700 border-cyan-200",
-    Cardiac: "bg-amber-50 text-amber-700 border-amber-200",
-  };
-  return map[category] ?? "bg-slate-50 text-slate-600 border-slate-200";
-}
-
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function dateParts(iso: string) {

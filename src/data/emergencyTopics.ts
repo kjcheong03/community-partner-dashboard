@@ -10,10 +10,16 @@ export const emergencyTopics: EmergencyTopic[] = [
       "MOH reports rising COVID-19 cases. Vulnerable seniors advised to stay current on boosters, mask in crowded settings, and monitor for breathlessness.",
     affectedAreas: ["Tampines", "Bedok", "Queenstown", "Bukit Merah", "Kallang", "Toa Payoh"],
     startedAt: "2025-05-28T09:00:00",
-    volunteerNote:
-      "Expect more medication and grocery runs for seniors self-isolating at home. Confirm households have enough essentials for at least 5 days.",
-    pharmacyNote:
-      "High demand for antiviral collection, inhalers, and oximeter requests. Keep Tampines and Bedok branches stocked and cold-chain ready.",
+    orgNotes: {
+      SGCares:
+        "Expect more doorstep checks, supplies drops, and short-term meal deliveries for seniors self-isolating at home.",
+      AACSGO:
+        "Prioritise seniors living alone, repeated requests, and households with weak caregiver support for outreach follow-up.",
+      SSOFSC:
+        "Watch for households that need urgent food rations, supermarket vouchers, or hygiene products during isolation.",
+      AICCare:
+        "Expect more Meals on Wheels, non-emergency clinic transport, and AIC Link care-navigation requests.",
+    },
   },
   {
     id: "TOPIC-DENGUE",
@@ -24,9 +30,15 @@ export const emergencyTopics: EmergencyTopic[] = [
       "NEA has flagged active dengue clusters. Residents urged to remove stagnant water; seniors with fever should be monitored for warning signs.",
     affectedAreas: ["Woodlands", "Yishun", "Sengkang", "Geylang", "Tampines"],
     startedAt: "2025-05-30T10:00:00",
-    volunteerNote:
-      "Expect more welfare checks for elderly living alone in affected sectors. Check for mosquito breeding in and around the home, and watch for persistent fever and dehydration during visits.",
-    pharmacyNote:
-      "Higher demand for paracetamol and fever-management supplies. Anticipate analgesic collection from Tampines, Hougang, and Yishun clusters.",
+    orgNotes: {
+      SGCares:
+        "Expect repellent, thermometer, and welfare-check requests in cluster areas. Volunteers should avoid entering homes unless needed.",
+      AACSGO:
+        "Prioritise seniors with fever symptoms, living-alone flags, or repeated failed contact attempts.",
+      SSOFSC:
+        "Prepare basic-needs triage for lower-income households that need repellent, thermometers, or food support during recovery.",
+      AICCare:
+        "Expect care-navigation and clinic transport requests for non-emergency follow-up appointments.",
+    },
   },
 ];

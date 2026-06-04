@@ -1,6 +1,6 @@
 import type { HelpRequest, HelpType } from "./types";
 
-export type OrgId = "AIC" | "SGCares" | "Pharmacy";
+export type OrgId = "AIC" | "SGCares" | "AACSGO" | "SSOFSC" | "AICCare";
 
 export type OrgConfig = {
   id: OrgId;
@@ -23,15 +23,29 @@ export const ORGS: OrgConfig[] = [
     id: "SGCares",
     name: "SG Cares Volunteer Centre",
     shortName: "SG Cares",
-    context: "Volunteer Operations · Central & East",
-    helpTypes: ["Welfare Check", "Food & Essentials", "Masks & Hygiene", "Advisory Assistance"],
+    context: "Volunteer Coordination · Town-based",
+    helpTypes: ["Supplies & Networks", "Food & Meal Support", "Welfare Check"],
   },
   {
-    id: "Pharmacy",
-    name: "Pharmacy Partner Network",
-    shortName: "Pharmacy Partner",
-    context: "Medication Fulfilment · Islandwide",
-    helpTypes: ["Medication Collection"],
+    id: "AACSGO",
+    name: "AAC/SGO Outreach",
+    shortName: "AAC/SGO",
+    context: "Senior Outreach · Befriending & referrals",
+    helpTypes: ["Welfare Check", "Care Referral / Navigation"],
+  },
+  {
+    id: "SSOFSC",
+    name: "SSO/FSC Support",
+    shortName: "SSO/FSC",
+    context: "Social Support · Basic needs",
+    helpTypes: ["Supplies & Networks", "Food & Meal Support", "Care Referral / Navigation"],
+  },
+  {
+    id: "AICCare",
+    name: "AIC Care Services",
+    shortName: "AIC Care",
+    context: "Meals, MET & care navigation",
+    helpTypes: ["Food & Meal Support", "Clinic Transport Help", "Care Referral / Navigation"],
   },
 ];
 
@@ -43,34 +57,27 @@ export function requestsForOrg(requests: HelpRequest[], id: OrgId): HelpRequest[
   const org = getOrg(id);
   if (org.helpTypes === "all") return requests;
   const allowed = new Set(org.helpTypes);
-  return requests.filter((r) => allowed.has(r.helpType));
+  return requests.filter(
+    (r) => allowed.has(r.helpType) && (r.assignedOrganisation === org.name || r.assignedOrganisation === "Unassigned")
+  );
 }
 
 // AIC can route any request to one of the onboarded partner organisations.
 export const PARTNER_ORGS = [
   "SG Cares Volunteer Centre",
-  "Silver Generation Office",
-  "Pharmacy Partner Network",
-  "Transport Partner Network",
-  "Clinic Partner",
+  "AAC/SGO Outreach",
+  "SSO/FSC Support",
+  "AIC Care Services",
 ];
 
-// SG Cares assigns ground work to its volunteer teams.
-export const VOLUNTEER_TEAMS = [
-  "Volunteer Team A",
-  "Volunteer Team B",
-  "Outreach Team",
-  "Befriender Squad",
-];
+export const TEAM_OPTIONS: Record<OrgId, string[]> = {
+  AIC: [],
+  SGCares: ["Volunteer Team A", "Volunteer Team B", "Outreach Team", "Befriender Squad"],
+  AACSGO: ["SGA Outreach Team", "AAC Befriender Team", "Senior Referral Desk", "Emergency Alert Follow-up"],
+  SSOFSC: ["SSO Intake Desk", "FSC Casework Team", "ComCare Support Desk", "Community Partner Liaison"],
+  AICCare: ["Meals on Wheels Desk", "MET Coordination Desk", "Care Navigation Desk", "AIC Link Advisor"],
+};
 
-// Pharmacy partners route collection requests to a fulfilment branch.
-export const PHARMACY_BRANCHES = [
-  "Pharmacy Partner @ Tampines",
-  "Pharmacy Partner @ Bedok",
-  "Pharmacy Partner @ Ang Mo Kio",
-  "Pharmacy Partner @ Jurong",
-  "Pharmacy Partner @ Toa Payoh",
-];
-
-export const HIGH_RISK_NOTE =
-  "High-risk medication — verify identity, check interactions, and require pharmacist sign-off before release.";
+export function teamsForOrg(org: OrgId): string[] {
+  return TEAM_OPTIONS[org];
+}

@@ -23,11 +23,11 @@ export default function CommunityInsights({ requests, topic }: Props) {
 
   const warnings: string[] = [];
   const welfareCount = filtered.filter((r) => r.helpType === "Welfare Check" && r.status !== "Fulfilled").length;
-  const transportCount = filtered.filter((r) => r.helpType === "Transport Support" && r.status !== "Fulfilled").length;
-  const medCount = filtered.filter((r) => r.helpType === "Medication Collection" && r.status !== "Fulfilled").length;
+  const transportCount = filtered.filter((r) => r.helpType === "Clinic Transport Help" && r.status !== "Fulfilled").length;
+  const suppliesCount = filtered.filter((r) => r.helpType === "Supplies & Networks" && r.status !== "Fulfilled").length;
   if (welfareCount >= 2) warnings.push(`Welfare checks: ${welfareCount} open`);
-  if (transportCount >= 2) warnings.push(`Transport: ${transportCount} open`);
-  if (medCount >= 2) warnings.push(`Medication: ${medCount} open`);
+  if (transportCount >= 2) warnings.push(`Clinic transport: ${transportCount} open`);
+  if (suppliesCount >= 2) warnings.push(`Supplies: ${suppliesCount} open`);
 
   return (
     <div className="bg-white rounded-xl border border-slate-200">

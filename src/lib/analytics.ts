@@ -2,17 +2,10 @@ import type { HelpRequest } from "./types";
 import type { OrgId } from "./orgs";
 import { areaMarkers } from "@/data/areaMarkers";
 
-// Fixed reference "now" so time-based metrics are stable against the mock dataset.
-export const NOW = new Date("2025-06-03T12:00:00");
-
 const CLOSED = new Set(["Fulfilled", "Unable To Fulfil", "Rerouted"]);
 
 export function isOpen(r: HelpRequest): boolean {
   return !CLOSED.has(r.status);
-}
-
-function hoursSince(iso: string): number {
-  return (NOW.getTime() - new Date(iso).getTime()) / 36e5;
 }
 
 function regionOf(area: string): string {
@@ -45,41 +38,59 @@ function countBy(requests: HelpRequest[], key: (r: HelpRequest) => string): Char
     .sort((a, b) => b.value - a.value);
 }
 
+function openRequests(requests: HelpRequest[]) {
+  return requests.filter(isOpen);
+}
+
+function unassigned(requests: HelpRequest[]) {
+  return requests.filter((r) => !r.assignedUnit || r.assignedOrganisation === "Unassigned");
+}
+
 export function statCards(org: OrgId, requests: HelpRequest[]): StatCard[] {
+  const open = openRequests(requests);
+
   if (org === "AIC") {
     const flagged = requests.filter((r) => r.flaggedForCareReview);
     return [
       { label: "Total incidents", value: requests.length, accent: "blue", hint: "across all partners" },
-      { label: "Flagged for care review", value: flagged.length, accent: "purple" },
+      { label: "High priority", value: open.filter((r) => r.urgency === "High").length, accent: "red" },
       { label: "Repeat households", value: repeatRecipientNames(requests).size, accent: "amber", hint: "2+ requests" },
-      { label: "Open care reviews", value: flagged.filter(isOpen).length, accent: "red" },
+      { label: "Open care reviews", value: flagged.filter(isOpen).length, accent: "purple" },
     ];
   }
+
   if (org === "SGCares") {
-    const open = requests.filter(isOpen);
-    const unassigned = open.filter((r) => !r.assignedTeam || r.assignedOrganisation === "Unassigned");
-    const languageSupport = open.filter((r) => r.riskFactors.includes("Language Support Needed"));
     return [
-      { label: "Open requests", value: open.length, accent: "blue" },
-      { label: "Urgent", value: open.filter((r) => r.urgency === "High").length, accent: "red" },
-      { label: "Unassigned open", value: unassigned.length, accent: "amber", hint: "needs team" },
-      { label: "Language support", value: languageSupport.length, accent: "purple", hint: "dialect / translation" },
+      { label: "Volunteer requests", value: open.length, accent: "blue" },
+      { label: "Supplies drops", value: open.filter((r) => r.helpType === "Supplies & Networks").length, accent: "teal" },
+      { label: "Welfare checks", value: open.filter((r) => r.helpType === "Welfare Check").length, accent: "purple" },
+      { label: "Unassigned unit", value: unassigned(open).length, accent: "amber" },
     ];
   }
-  // Pharmacy partner
-  const open = requests.filter(isOpen);
-  const highRisk = open.filter((r) => r.medications?.some((m) => m.highRisk));
-  const coldChain = open.filter(
-    (r) =>
-      r.helpTags.includes("Refrigerated medication") ||
-      r.medications?.some((m) => m.category === "Insulin")
-  );
-  const unrouted = open.filter((r) => !r.pharmacyBranch);
+
+  if (org === "AACSGO") {
+    return [
+      { label: "Outreach cases", value: open.length, accent: "purple" },
+      { label: "Living alone", value: open.filter((r) => r.riskFactors.includes("Living Alone")).length, accent: "amber" },
+      { label: "Care navigation", value: open.filter((r) => r.helpType === "Care Referral / Navigation").length, accent: "blue" },
+      { label: "High priority", value: open.filter((r) => r.urgency === "High").length, accent: "red" },
+    ];
+  }
+
+  if (org === "SSOFSC") {
+    return [
+      { label: "Basic-needs cases", value: open.length, accent: "green" },
+      { label: "Supplies support", value: open.filter((r) => r.helpType === "Supplies & Networks").length, accent: "teal" },
+      { label: "Food support", value: open.filter((r) => r.helpType === "Food & Meal Support").length, accent: "amber" },
+      { label: "Unassigned unit", value: unassigned(open).length, accent: "red" },
+    ];
+  }
+
   return [
-    { label: "Open medication requests", value: open.length, accent: "teal" },
-    { label: "High-risk meds", value: highRisk.length, accent: "red", hint: "clinical sign-off" },
-    { label: "Cold-chain handling", value: coldChain.length, accent: "purple", hint: "insulin / refrigerated" },
-    { label: "Unrouted to branch", value: unrouted.length, accent: "amber" },
+    { label: "Care service cases", value: open.length, accent: "blue" },
+    { label: "Meal support", value: open.filter((r) => r.helpType === "Food & Meal Support").length, accent: "green" },
+    { label: "Clinic transport", value: open.filter((r) => r.helpType === "Clinic Transport Help").length, accent: "amber" },
+    { label: "Care navigation", value: open.filter((r) => r.helpType === "Care Referral / Navigation").length, accent: "purple" },
   ];
 }
 
@@ -90,20 +101,31 @@ export function charts(org: OrgId, requests: HelpRequest[]): [ChartSpec, ChartSp
       { title: "Partner workload", kind: "pie", data: countBy(requests, (r) => r.assignedOrganisation) },
     ];
   }
+
   if (org === "SGCares") {
     return [
-      { title: "Request volume by sector", kind: "bar", data: countBy(requests, (r) => regionOf(r.area)) },
-      { title: "Breakdown by help type", kind: "pie", data: countBy(requests, (r) => r.helpType) },
+      { title: "Volunteer demand by sector", kind: "bar", data: countBy(requests, (r) => regionOf(r.area)) },
+      { title: "Volunteer request mix", kind: "pie", data: countBy(requests, (r) => r.helpType) },
     ];
   }
-  // Pharmacy partner
-  const medCategory = (r: HelpRequest) => r.medications?.map((m) => m.category) ?? [];
-  const catCounts = new Map<string, number>();
-  for (const r of requests) for (const c of medCategory(r)) catCounts.set(c, (catCounts.get(c) ?? 0) + 1);
-  const catData = [...catCounts.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+
+  if (org === "AACSGO") {
+    return [
+      { title: "Outreach demand by area", kind: "bar", data: countBy(requests, (r) => r.area).slice(0, 8) },
+      { title: "Senior support mix", kind: "pie", data: countBy(requests, (r) => r.helpType) },
+    ];
+  }
+
+  if (org === "SSOFSC") {
+    return [
+      { title: "Basic-needs demand by sector", kind: "bar", data: countBy(requests, (r) => regionOf(r.area)) },
+      { title: "Social support mix", kind: "pie", data: countBy(requests, (r) => r.helpType) },
+    ];
+  }
+
   return [
-    { title: "Most requested medication categories", kind: "bar", data: catData },
-    { title: "Volume by pharmacy branch", kind: "pie", data: countBy(requests, (r) => r.pharmacyBranch?.replace("Pharmacy Partner @ ", "") ?? "Unrouted") },
+    { title: "Care services by area", kind: "bar", data: countBy(requests, (r) => r.area).slice(0, 8) },
+    { title: "AIC service mix", kind: "pie", data: countBy(requests, (r) => r.helpType) },
   ];
 }
 
@@ -112,55 +134,40 @@ export function insights(org: OrgId, requests: HelpRequest[]): string[] {
     const repeats = repeatRecipientNames(requests);
     const out: string[] = [];
     if (repeats.size > 0) {
-      // Areas where repeat households cluster.
-      const repeatAreas = countBy(
-        requests.filter((r) => repeats.has(r.recipient.name)),
-        (r) => r.area
-      );
-      const topArea = repeatAreas[0];
       out.push(
-        `${repeats.size} household${repeats.size === 1 ? "" : "s"} have submitted 2 or more requests recently — a signal for long-term care follow-up.`
+        `${repeats.size} household${repeats.size === 1 ? "" : "s"} have submitted 2 or more requests recently — a signal for care follow-up.`
       );
-      if (topArea && topArea.value >= 2) {
-        out.push(`${topArea.value} of these repeat requests are in ${topArea.label}, suggesting a localised care gap.`);
-      }
     }
     const byType = countBy(requests, (r) => r.helpType);
-    if (byType[0]) {
-      out.push(`${byType[0].label} is the most common request type this period (${byType[0].value} requests), largely from elderly living alone.`);
-    }
+    if (byType[0]) out.push(`${byType[0].label} is the most common request type this period (${byType[0].value} requests).`);
     const openReviews = requests.filter((r) => r.flaggedForCareReview && isOpen(r)).length;
-    if (openReviews > 0) out.push(`${openReviews} case${openReviews === 1 ? "" : "s"} on the care-review watch list remain open.`);
+    if (openReviews > 0) out.push(`${openReviews} care-review watch-list case${openReviews === 1 ? "" : "s"} remain open.`);
     return out;
   }
+
+  const out: string[] = [];
+  const open = openRequests(requests);
+  const noUnit = unassigned(open);
+  if (noUnit.length > 0) {
+    const areas = [...new Set(noUnit.map((r) => r.area))].join(", ");
+    out.push(`${noUnit.length} open request${noUnit.length === 1 ? "" : "s"} need an assigned unit (${areas}).`);
+  }
+  const openByArea = countBy(open, (r) => r.area);
+  if (openByArea[0]) out.push(`${openByArea[0].label} has the most open requests (${openByArea[0].value}).`);
 
   if (org === "SGCares") {
-    const out: string[] = [];
-    const unassigned = requests.filter((r) => isOpen(r) && (!r.assignedTeam || r.assignedOrganisation === "Unassigned"));
-    if (unassigned.length > 0) {
-      const areas = [...new Set(unassigned.map((r) => r.area))].join(", ");
-      out.push(`${unassigned.length} open request${unassigned.length === 1 ? "" : "s"} not yet assigned to a volunteer (${areas}).`);
-    }
-    const openByArea = countBy(requests.filter(isOpen), (r) => r.area);
-    if (openByArea[0]) out.push(`${openByArea[0].label} has the most open requests (${openByArea[0].value}) — volunteer coverage is stretched there.`);
-    const langNeed = requests.filter((r) => isOpen(r) && r.riskFactors.includes("Language Support Needed")).length;
-    if (langNeed > 0) out.push(`${langNeed} open case${langNeed === 1 ? "" : "s"} need dialect or language support — roster multilingual befrienders.`);
-    return out;
+    const languageNeed = open.filter((r) => r.riskFactors.includes("Language Support Needed")).length;
+    if (languageNeed > 0) out.push(`${languageNeed} case${languageNeed === 1 ? "" : "s"} need language support — roster multilingual volunteers.`);
+  } else if (org === "AACSGO") {
+    const alone = open.filter((r) => r.riskFactors.includes("Living Alone")).length;
+    if (alone > 0) out.push(`${alone} open senior outreach case${alone === 1 ? "" : "s"} involve seniors living alone.`);
+  } else if (org === "SSOFSC") {
+    const basicNeeds = open.filter((r) => r.helpType === "Supplies & Networks" || r.helpType === "Food & Meal Support").length;
+    if (basicNeeds > 0) out.push(`${basicNeeds} case${basicNeeds === 1 ? "" : "s"} involve immediate basic-needs support.`);
+  } else {
+    const transport = open.filter((r) => r.helpType === "Clinic Transport Help").length;
+    if (transport > 0) out.push(`${transport} non-emergency clinic transport case${transport === 1 ? "" : "s"} need MET coordination.`);
   }
 
-  // Pharmacy partner
-  const out: string[] = [];
-  const agedHighRisk = requests.filter(
-    (r) => isOpen(r) && r.medications?.some((m) => m.highRisk) && hoursSince(r.submittedAt) > 24
-  );
-  if (agedHighRisk.length > 0) {
-    const ids = agedHighRisk.map((r) => r.id).join(", ");
-    out.push(`${agedHighRisk.length} high-risk medication request${agedHighRisk.length === 1 ? "" : "s"} unactioned for more than 24 hours (${ids}) — escalate for pharmacist sign-off.`);
-  }
-  const pending = requests.filter((r) => isOpen(r) && r.status !== "New").length;
-  if (pending > 0) out.push(`${pending} request${pending === 1 ? "" : "s"} pending collection or delivery.`);
-  const byBranch = countBy(requests, (r) => r.pharmacyBranch?.replace("Pharmacy Partner @ ", "") ?? "Unrouted");
-  const busiest = byBranch.find((b) => b.label !== "Unrouted");
-  if (busiest) out.push(`${busiest.label} branch is handling the most collections (${busiest.value}).`);
   return out;
 }

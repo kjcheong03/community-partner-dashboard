@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronUp, Megaphone, Pill, Siren, Users, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, Megaphone, Siren, Users, X } from "lucide-react";
 import type { HelpRequest, EmergencyTopic, Topic } from "@/lib/types";
 import type { OrgId } from "@/lib/orgs";
 import { cn, urgencyColor } from "@/lib/utils";
@@ -194,35 +194,28 @@ function OrgFooter({ org, topic, linked }: { org: OrgId; topic: EmergencyTopic; 
     );
   }
 
-  if (org === "SGCares") {
-    return (
-      <div className="mt-3 pt-3 border-t border-slate-100 flex items-start gap-1.5 text-xs text-blue-700 bg-blue-50/60 -mx-1 px-2 py-1.5 rounded-lg">
-        <Megaphone size={13} className="mt-0.5 shrink-0 text-blue-500" />
-        <span className="leading-relaxed">{topic.volunteerNote}</span>
-      </div>
-    );
-  }
+  const note = topic.orgNotes[org];
+  const noteTone =
+    org === "SGCares"
+      ? "text-blue-700 bg-blue-50/60"
+      : org === "AACSGO"
+        ? "text-purple-700 bg-purple-50/60"
+        : org === "SSOFSC"
+          ? "text-green-700 bg-green-50/60"
+          : "text-teal-700 bg-teal-50/60";
+  const iconTone =
+    org === "SGCares"
+      ? "text-blue-500"
+      : org === "AACSGO"
+        ? "text-purple-500"
+        : org === "SSOFSC"
+          ? "text-green-500"
+          : "text-teal-500";
 
-  // Pharmacy partner — medications most associated with this topic + stock note
-  const catCounts = new Map<string, number>();
-  for (const r of linked) for (const m of r.medications ?? []) catCounts.set(m.category, (catCounts.get(m.category) ?? 0) + 1);
-  const topCats = [...catCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
   return (
-    <div className="mt-3 pt-3 border-t border-slate-100">
-      {topCats.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-          <span className="text-[11px] text-slate-400">Top categories:</span>
-          {topCats.map(([cat, n]) => (
-            <span key={cat} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-100">
-              {cat} · {n}
-            </span>
-          ))}
-        </div>
-      )}
-      <div className="flex items-start gap-1.5 text-xs text-teal-700 bg-teal-50/60 -mx-1 px-2 py-1.5 rounded-lg">
-        <Pill size={13} className="mt-0.5 shrink-0 text-teal-500" />
-        <span className="leading-relaxed">{topic.pharmacyNote}</span>
-      </div>
+    <div className={cn("mt-3 pt-3 border-t border-slate-100 flex items-start gap-1.5 text-xs -mx-1 px-2 py-1.5 rounded-lg", noteTone)}>
+      <Megaphone size={13} className={cn("mt-0.5 shrink-0", iconTone)} />
+      <span className="leading-relaxed">{note}</span>
     </div>
   );
 }

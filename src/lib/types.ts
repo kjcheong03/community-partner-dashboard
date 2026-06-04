@@ -10,35 +10,16 @@ export type Status =
   | "Rerouted";
 
 export type HelpType =
-  | "Medication Collection"
-  | "Transport Support"
+  | "Supplies & Networks"
+  | "Food & Meal Support"
   | "Welfare Check"
-  | "Food & Essentials"
-  | "Masks & Hygiene"
-  | "Advisory Assistance";
+  | "Clinic Transport Help"
+  | "Care Referral / Navigation";
 
 export type ActivityLogEntry = {
   timestamp: string;
   action: string;
   actor?: string;
-};
-
-export type MedicationCategory =
-  | "Anticoagulant"
-  | "Insulin"
-  | "Controlled Drug"
-  | "Antihypertensive"
-  | "Antidiabetic"
-  | "Respiratory"
-  | "Cardiac"
-  | "Other";
-
-export type Medication = {
-  name: string;
-  dosage: string;
-  category: MedicationCategory;
-  // High-risk meds (warfarin, insulin, controlled drugs) need a clinical flag.
-  highRisk?: boolean;
 };
 
 export type Recipient = {
@@ -67,15 +48,13 @@ export type HelpRequest = {
   riskFactors: string[];
   helpTags: string[];
   assignedOrganisation: string;
+  // Agency-specific operating unit that owns this request in the partner view.
+  assignedUnit?: string;
   assignedTeam?: string;
-  pharmacyBranch?: string;
-  // SG Cares volunteer centre this request is routed to (map/drawer assignment).
-  assignedCentre?: string;
   submittedAt: string;
   notes: string;
   recipient: Recipient;
   caregiver: Caregiver;
-  medications?: Medication[];
   activityLog: ActivityLogEntry[];
   // Final disposition once a request is closed (shown in AIC's incident log).
   outcome?: string;
@@ -91,8 +70,10 @@ export type EmergencyTopic = {
   advisorySummary: string;
   affectedAreas: string[];
   startedAt: string;
-  // Plain-language note for volunteers on the ground (SG Cares context).
-  volunteerNote: string;
-  // Stock / branch-routing guidance for the pharmacy partner network.
-  pharmacyNote: string;
+  orgNotes: {
+    SGCares: string;
+    AACSGO: string;
+    SSOFSC: string;
+    AICCare: string;
+  };
 };

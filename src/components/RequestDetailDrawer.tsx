@@ -1,14 +1,10 @@
 "use client";
 
-import { X, ChevronDown, AlertTriangle, User, HeartPulse, Pill, MapPin, Flag } from "lucide-react";
+import { X, ChevronDown, AlertTriangle, User, HeartPulse, MapPin, Flag, Building2, Users } from "lucide-react";
 import type { HelpRequest, Status } from "@/lib/types";
 import type { OrgId } from "@/lib/orgs";
-import {
-  VOLUNTEER_TEAMS,
-  PHARMACY_BRANCHES,
-  HIGH_RISK_NOTE,
-} from "@/lib/orgs";
-import { cn, urgencyColor, statusColor, medicationCategoryColor } from "@/lib/utils";
+import { getOrg, teamsForOrg } from "@/lib/orgs";
+import { cn, urgencyColor, statusColor } from "@/lib/utils";
 import { nearestFacility, ownFacilities, clinics, ownFacilityLabel } from "@/data/facilities";
 import ActivityTimeline from "./ActivityTimeline";
 
@@ -33,16 +29,19 @@ const RISK_COLORS: Record<string, string> = {
   "Living Alone": "bg-red-50 text-red-700 border-red-100",
   "Limited Mobility": "bg-amber-50 text-amber-700 border-amber-100",
   "Chronic Illness": "bg-orange-50 text-orange-700 border-orange-100",
-  "Medication Dependent": "bg-purple-50 text-purple-700 border-purple-100",
   "Language Support Needed": "bg-blue-50 text-blue-700 border-blue-100",
+  "Financial Strain": "bg-green-50 text-green-700 border-green-100",
+  "No Caregiver": "bg-purple-50 text-purple-700 border-purple-100",
+  "Fever Symptoms": "bg-rose-50 text-rose-700 border-rose-100",
+  "Isolation Risk": "bg-slate-50 text-slate-700 border-slate-200",
+  "Caregiver Unavailable": "bg-cyan-50 text-cyan-700 border-cyan-100",
 };
 
 export default function RequestDetailDrawer({ request, org, onClose, onUpdate }: Props) {
   const now = () => new Date().toISOString();
-  const hasHighRisk = request.medications?.some((m) => m.highRisk) ?? false;
-
   const nearestOwn = nearestFacility(request.area, ownFacilities(org));
   const nearestClinic = nearestFacility(request.area, clinics());
+  const teamOptions = teamsForOrg(org);
 
   function changeStatus(next: Status) {
     if (next === request.status) return;
@@ -55,7 +54,8 @@ export default function RequestDetailDrawer({ request, org, onClose, onUpdate }:
   function assignTeam(team: string) {
     onUpdate(request.id, {
       assignedTeam: team,
-      activityLog: [...request.activityLog, { timestamp: now(), action: `Assigned to ${team}` }],
+      assignedOrganisation: org === "AIC" ? request.assignedOrganisation : getOrg(org).name,
+      activityLog: [...request.activityLog, { timestamp: now(), action: `Assigned to ${team}`, actor: org }],
     });
   }
 
@@ -70,17 +70,11 @@ export default function RequestDetailDrawer({ request, org, onClose, onUpdate }:
     });
   }
 
-  function routeBranch(branch: string) {
+  function routeUnit(unit: string) {
     onUpdate(request.id, {
-      pharmacyBranch: branch,
-      activityLog: [...request.activityLog, { timestamp: now(), action: `Routed to ${branch}` }],
-    });
-  }
-
-  function routeCentre(centre: string) {
-    onUpdate(request.id, {
-      assignedCentre: centre,
-      activityLog: [...request.activityLog, { timestamp: now(), action: `Routed to volunteer centre: ${centre}` }],
+      assignedUnit: unit,
+      assignedOrganisation: org === "AIC" ? request.assignedOrganisation : getOrg(org).name,
+      activityLog: [...request.activityLog, { timestamp: now(), action: `Routed to assigned unit: ${unit}`, actor: org }],
     });
   }
 
@@ -90,7 +84,6 @@ export default function RequestDetailDrawer({ request, org, onClose, onUpdate }:
         onClick={(e) => e.stopPropagation()}
         className="pointer-events-auto relative bg-white w-full max-w-[460px] h-full shadow-2xl border-l border-slate-200 flex flex-col"
       >
-        {/* Header */}
         <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between shrink-0">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -113,15 +106,6 @@ export default function RequestDetailDrawer({ request, org, onClose, onUpdate }:
         </div>
 
         <div className="flex-1 overflow-y-auto thin-scrollbar">
-          {/* High-risk clinical banner for pharmacy partner context. */}
-          {org === "Pharmacy" && hasHighRisk && (
-            <div className="mx-5 mt-4 flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
-              <AlertTriangle size={16} className="text-red-600 mt-0.5 shrink-0" />
-              <p className="text-xs text-red-700 leading-relaxed">{HIGH_RISK_NOTE}</p>
-            </div>
-          )}
-
-          {/* Recipient */}
           <Section title="Care Recipient" icon={<User size={13} />}>
             <Row label="Name">{request.recipient.name}</Row>
             <Row label="Age">{request.recipient.age}</Row>
@@ -129,9 +113,8 @@ export default function RequestDetailDrawer({ request, org, onClose, onUpdate }:
             <Row label="Mobility">{request.recipient.mobility}</Row>
           </Section>
 
-          {/* Clinical detail — surfaced for pharmacy fulfilment context. */}
-          {(org === "Pharmacy" || request.recipient.conditions.length > 0) && (
-            <Section title="Conditions & Allergies" icon={<HeartPulse size={13} />}>
+          {(request.recipient.conditions.length > 0 || request.recipient.allergies.length > 0) && (
+            <Section title="Health Notes" icon={<HeartPulse size={13} />}>
               <div className="space-y-2">
                 <div>
                   <p className="text-xs text-slate-400 mb-1">Conditions</p>
@@ -165,39 +148,6 @@ export default function RequestDetailDrawer({ request, org, onClose, onUpdate }:
             </Section>
           )}
 
-          {/* Medication list for pharmacy partner fulfilment. */}
-          {org === "Pharmacy" && request.medications && request.medications.length > 0 && (
-            <Section title="Medication List" icon={<Pill size={13} />}>
-              <div className="space-y-2">
-                {request.medications.map((m) => (
-                  <div
-                    key={m.name}
-                    className={cn(
-                      "rounded-lg border px-3 py-2 flex items-start justify-between gap-2",
-                      m.highRisk ? "border-red-200 bg-red-50/40" : "border-slate-200 bg-white"
-                    )}
-                  >
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-medium text-slate-800">{m.name}</span>
-                        {m.highRisk && (
-                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-600 text-white flex items-center gap-0.5">
-                            <AlertTriangle size={9} /> HIGH-RISK
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-500">{m.dosage}</p>
-                    </div>
-                    <span className={cn("text-[11px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap", medicationCategoryColor(m.category))}>
-                      {m.category}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </Section>
-          )}
-
-          {/* Caregiver */}
           <Section title="Caregiver" icon={<User size={13} />}>
             <Row label="Name">{request.caregiver.name}</Row>
             <Row label="Relationship">{request.caregiver.relationship}</Row>
@@ -205,7 +155,6 @@ export default function RequestDetailDrawer({ request, org, onClose, onUpdate }:
             <Row label="Contact">{request.caregiver.contactMethod}</Row>
           </Section>
 
-          {/* Help needed tags */}
           {request.helpTags.length > 0 && (
             <Section title="Help Needed">
               <div className="flex flex-wrap gap-1.5">
@@ -218,7 +167,6 @@ export default function RequestDetailDrawer({ request, org, onClose, onUpdate }:
             </Section>
           )}
 
-          {/* Risk factors */}
           {request.riskFactors.length > 0 && (
             <Section title="Risk Factors">
               <div className="flex flex-wrap gap-1.5">
@@ -237,12 +185,10 @@ export default function RequestDetailDrawer({ request, org, onClose, onUpdate }:
             </Section>
           )}
 
-          {/* Caregiver notes */}
-          <Section title="Caregiver Notes">
+          <Section title="Case Notes">
             <p className="text-sm text-slate-600 leading-relaxed">{request.notes}</p>
           </Section>
 
-          {/* Nearby — closest org facility + clinic for this recipient's area */}
           <Section title="Nearby" icon={<MapPin size={13} />}>
             <div className="space-y-2">
               {nearestOwn && (
@@ -268,13 +214,13 @@ export default function RequestDetailDrawer({ request, org, onClose, onUpdate }:
             </div>
           </Section>
 
-          {/* ── Org-contextual controls ── */}
           {org === "AIC" ? (
-            /* AIC: read-only oversight. Routing/status are automated; only the
-               care-review flag is actionable. */
-            <Section title="Care Oversight">
-              <Field label="Routed to (partner)">
+            <Section title="Care Oversight" icon={<Flag size={13} />}>
+              <Field label="Routed to partner">
                 <p className="text-sm text-slate-700">{request.assignedOrganisation}</p>
+              </Field>
+              <Field label="Assigned unit">
+                <p className="text-sm text-slate-700">{request.assignedUnit ?? "Not assigned"}</p>
               </Field>
               {request.outcome && (
                 <Field label="Outcome">
@@ -291,55 +237,40 @@ export default function RequestDetailDrawer({ request, org, onClose, onUpdate }:
                 )}
               >
                 <Flag size={14} />
-                {request.flaggedForCareReview ? "On care-review watch list — remove" : "Flag for Care Review"}
+                {request.flaggedForCareReview ? "On care-review watch list - remove" : "Flag for Care Review"}
               </button>
               <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
-                AIC oversight is read-only. Requests are routed automatically by the dispatcher; this view tracks
-                outcomes and long-term care follow-up.
+                AIC tracks cross-partner load and long-term care follow-up. Partner teams handle unit assignment and
+                operational status updates.
               </p>
             </Section>
           ) : (
-            <Section title="Coordination">
+            <Section title="Coordination" icon={<Building2 size={13} />}>
               <Field label="Status">
                 <Dropdown value={request.status} onChange={(v) => changeStatus(v as Status)} options={STATUS_OPTIONS} />
               </Field>
-
-              {org === "SGCares" && (
-                <>
-                  <Field label="Volunteer Centre">
-                    <Dropdown
-                      value={request.assignedCentre ?? ""}
-                      onChange={routeCentre}
-                      options={ownFacilities("SGCares").map((f) => f.name)}
-                      placeholder="Route to centre..."
-                    />
-                  </Field>
-                  <Field label="Assign to Volunteer">
-                    <Dropdown
-                      value={request.assignedTeam ?? ""}
-                      onChange={assignTeam}
-                      options={VOLUNTEER_TEAMS}
-                      placeholder="Select volunteer team..."
-                    />
-                  </Field>
-                </>
-              )}
-
-              {org === "Pharmacy" && (
-                <Field label="Pharmacy Branch">
+              <Field label="Assigned Unit">
+                <Dropdown
+                  value={request.assignedUnit ?? ""}
+                  onChange={routeUnit}
+                  options={ownFacilities(org).map((f) => f.name)}
+                  placeholder="Route to unit..."
+                />
+              </Field>
+              {teamOptions.length > 0 && (
+                <Field label="Assigned Team">
                   <Dropdown
-                    value={request.pharmacyBranch ?? ""}
-                    onChange={routeBranch}
-                    options={PHARMACY_BRANCHES}
-                    placeholder="Route to branch..."
+                    value={request.assignedTeam ?? ""}
+                    onChange={assignTeam}
+                    options={teamOptions}
+                    placeholder="Select team..."
                   />
                 </Field>
               )}
             </Section>
           )}
 
-          {/* Activity log */}
-          <Section title="Activity Log">
+          <Section title="Activity Log" icon={<Users size={13} />}>
             <ActivityTimeline entries={request.activityLog} />
           </Section>
         </div>
@@ -393,13 +324,9 @@ function Dropdown({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white text-slate-700"
+        className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
       >
-        {placeholder && (
-          <option value="" disabled>
-            {placeholder}
-          </option>
-        )}
+        {placeholder && <option value="">{placeholder}</option>}
         {options.map((o) => (
           <option key={o} value={o}>
             {o}
