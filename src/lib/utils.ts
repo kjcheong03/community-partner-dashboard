@@ -6,23 +6,43 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// Restrained state palette — only High/urgent reads loud; everything else is quiet.
 export function urgencyColor(urgency: Urgency): string {
   return {
-    High: "bg-red-100 text-red-700",
-    Medium: "bg-amber-100 text-amber-700",
-    Low: "bg-green-100 text-green-700",
+    High: "bg-red-50 text-red-700 ring-1 ring-inset ring-red-200",
+    Medium: "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200",
+    Low: "bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200",
   }[urgency];
 }
 
+// Small coloured dot used alongside neutral status/urgency text.
+export function urgencyDot(urgency: Urgency): string {
+  return { High: "bg-red-500", Medium: "bg-amber-500", Low: "bg-slate-400" }[urgency];
+}
+
+// Status as a soft tinted pill rather than a solid block — keeps rows calm.
 export function statusColor(status: Status): string {
   const map: Record<Status, string> = {
-    New: "bg-blue-600 text-white",
-    Received: "bg-sky-600 text-white",
-    Accepted: "bg-emerald-600 text-white",
-    "In Progress": "bg-orange-500 text-white",
-    Fulfilled: "bg-emerald-600 text-white",
-    "Unable To Fulfil": "bg-red-600 text-white",
-    Rerouted: "bg-slate-600 text-white",
+    New: "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200",
+    Received: "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200",
+    Accepted: "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200",
+    "In Progress": "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200",
+    Fulfilled: "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200",
+    "Unable To Fulfil": "bg-red-50 text-red-700 ring-1 ring-inset ring-red-200",
+    Rerouted: "bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200",
+  };
+  return map[status];
+}
+
+export function statusDot(status: Status): string {
+  const map: Record<Status, string> = {
+    New: "bg-blue-500",
+    Received: "bg-blue-500",
+    Accepted: "bg-emerald-500",
+    "In Progress": "bg-amber-500",
+    Fulfilled: "bg-emerald-500",
+    "Unable To Fulfil": "bg-red-500",
+    Rerouted: "bg-slate-400",
   };
   return map[status];
 }
@@ -35,12 +55,11 @@ export function caseDomainLabel(domain: CaseDomain): string {
   }[domain];
 }
 
-export function caseDomainColor(domain: CaseDomain): string {
-  return {
-    A: "bg-purple-50 text-purple-700 border-purple-100",
-    B: "bg-rose-50 text-rose-700 border-rose-100",
-    C: "bg-cyan-50 text-cyan-700 border-cyan-100",
-  }[domain];
+// Domain is a classification, not a state — render it neutrally so it doesn't
+// compete with urgency/status for attention.
+export function caseDomainColor(_domain: CaseDomain): string {
+  void _domain;
+  return "bg-slate-100 text-slate-600 border-slate-200";
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];

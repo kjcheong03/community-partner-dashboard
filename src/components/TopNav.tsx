@@ -12,34 +12,26 @@ export default function TopNav({ org, onChangeOrg }: Props) {
   const current = getOrg(org);
 
   return (
-    <header className="bg-slate-900 px-6 flex items-center justify-between h-14 shrink-0">
-      <div className="flex items-center gap-3">
-        <div className="w-7 h-7 rounded-md bg-blue-500 flex items-center justify-center text-white font-bold text-xs">
-          C
-        </div>
-        <span className="text-white font-semibold text-sm">CARA</span>
-        <span className="text-slate-600 text-sm">|</span>
-        <span className="text-slate-300 text-sm hidden sm:block">Community Dashboard</span>
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5">
+      <div className="flex items-baseline gap-2.5 min-w-0">
+        <h1 className="truncate text-[15px] font-semibold text-slate-800">Community Dashboard</h1>
+        <span className="hidden text-xs text-slate-400 md:block">{current.context}</span>
       </div>
 
-      <div className="flex items-center gap-4">
-        <span className="text-slate-500 text-xs hidden lg:block">{current.context}</span>
-
-        <div className="relative">
-          <Building2 size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          <select
-            value={org}
-            onChange={(e) => onChangeOrg(e.target.value as OrgId)}
-            className="appearance-none bg-slate-800 text-white text-sm font-medium border border-slate-700 rounded-lg pl-8 pr-8 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer hover:bg-slate-700 transition-colors"
-          >
-            {ORGS.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
+      <div className="relative shrink-0">
+        <Building2 size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <select
+          value={org}
+          onChange={(e) => onChangeOrg(e.target.value as OrgId)}
+          className="cursor-pointer appearance-none rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-8 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          {ORGS.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name}
+            </option>
+          ))}
+        </select>
+        <ChevronDown size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
       </div>
     </header>
   );

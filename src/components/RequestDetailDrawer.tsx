@@ -88,7 +88,7 @@ export default function RequestDetailDrawer({ request, org, onClose, onUpdate }:
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-mono text-xs text-slate-400">{request.id}</span>
-              <span className={cn("rounded-md px-2 py-1 text-xs font-semibold shadow-sm", statusColor(request.status))}>
+              <span className={cn("rounded-md px-2 py-0.5 text-xs font-medium", statusColor(request.status))}>
                 {request.status}
               </span>
               <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full", urgencyColor(request.urgency))}>

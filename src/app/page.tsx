@@ -1,167 +1,61 @@
-"use client";
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
+import { WORKSPACES, type SupportGroup, type WorkspaceConfig } from "@/lib/workspaces";
 
-import { useState, useMemo, useRef } from "react";
-import dynamic from "next/dynamic";
-import type { HelpRequest, Topic } from "@/lib/types";
-import { mockRequests } from "@/data/mockRequests";
-import { emergencyTopics } from "@/data/emergencyTopics";
-import { getOrg, requestsForOrg, type OrgId } from "@/lib/orgs";
-import type { Facility } from "@/data/facilities";
-import TopNav from "@/components/TopNav";
-import EmergencyTopics from "@/components/EmergencyTopics";
-import StatCards from "@/components/StatCards";
-import AgencyReadinessPanel from "@/components/AgencyReadinessPanel";
-import RequestQueue from "@/components/RequestQueue";
-import RequestDetailDrawer from "@/components/RequestDetailDrawer";
+const SUPPORT_GROUPS: { id: SupportGroup; title: string }[] = [
+  { id: "supplies", title: "Health / emergency supplies" },
+  { id: "food", title: "Food / meal support" },
+  { id: "welfare", title: "Welfare check" },
+  { id: "transport", title: "Assisted transport" },
+  { id: "referral", title: "Care referral / navigation" },
+];
 
-const OperationsMap = dynamic(() => import("@/components/OperationsMap"), { ssr: false });
-const HIDDEN_QUEUE_STATUSES = new Set(["Fulfilled"]);
-const MIN_MAP_WIDTH = 36;
-const MAX_MAP_WIDTH = 74;
-
-export default function DashboardPage() {
-  const [requests, setRequests] = useState<HelpRequest[]>(mockRequests);
-  const [org, setOrg] = useState<OrgId>("AIC");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedTopic, setSelectedTopic] = useState<"All" | Topic>("All");
-  const [mapWidth, setMapWidth] = useState(56);
-  const workspaceRef = useRef<HTMLDivElement>(null);
-
-  const orgRequests = useMemo(() => requestsForOrg(requests, org), [requests, org]);
-  const activeRequests = useMemo(
-    () => orgRequests.filter((r) => !HIDDEN_QUEUE_STATUSES.has(r.status)),
-    [orgRequests]
-  );
-  const topicRequests = useMemo(
-    () => activeRequests.filter((r) => selectedTopic === "All" || r.topic === selectedTopic),
-    [activeRequests, selectedTopic]
-  );
-  const selectedRequest = activeRequests.find((r) => r.id === selectedId) ?? null;
-
-  function handleUpdate(id: string, updates: Partial<HelpRequest>) {
-    setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, ...updates } : r)));
-  }
-
-  function handleRoute(req: HelpRequest, facility: Facility) {
-    handleUpdate(req.id, {
-      assignedUnit: facility.name,
-      assignedOrganisation: org === "AIC" ? req.assignedOrganisation : getOrg(org).name,
-      activityLog: [
-        ...req.activityLog,
-        {
-          timestamp: new Date().toISOString(),
-          action: `Routed to assigned unit: ${facility.name}`,
-          actor: org,
-        },
-      ],
-    });
-  }
-
-  function handleChangeOrg(next: OrgId) {
-    setOrg(next);
-    setSelectedId(null);
-    setSelectedTopic("All");
-  }
-
-  function updatePaneWidth(clientX: number) {
-    const rect = workspaceRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const next = ((clientX - rect.left) / rect.width) * 100;
-    setMapWidth(Math.min(MAX_MAP_WIDTH, Math.max(MIN_MAP_WIDTH, next)));
-  }
-
-  function handleResizeStart(e: React.PointerEvent<HTMLButtonElement>) {
-    e.preventDefault();
-    updatePaneWidth(e.clientX);
-
-    const previousCursor = document.body.style.cursor;
-    const previousUserSelect = document.body.style.userSelect;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-
-    const onMove = (event: PointerEvent) => updatePaneWidth(event.clientX);
-    const onUp = () => {
-      document.body.style.cursor = previousCursor;
-      document.body.style.userSelect = previousUserSelect;
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-    };
-
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-  }
-
+export default function HomePage() {
   return (
-    <div className="flex flex-col h-screen bg-slate-100 overflow-hidden">
-      <TopNav org={org} onChangeOrg={handleChangeOrg} />
+    <main className="min-h-screen bg-[var(--background)] px-[22px] py-[26px] text-slate-800">
+      <div className="mx-auto max-w-[79rem] space-y-[26px]">
+        <header className="border-b border-slate-200 pb-[18px]">
+          <h1 className="text-[22px] font-semibold tracking-tight">Community Partner Dashboards</h1>
+        </header>
 
-      <main className="flex-1 overflow-y-auto thin-scrollbar">
-        <div className="p-4 flex flex-col gap-3">
-          <EmergencyTopics
-            org={org}
-            requests={activeRequests}
-            topics={emergencyTopics}
-            selectedTopic={selectedTopic}
-            onSelectTopic={setSelectedTopic}
-          />
-
-          <StatCards org={org} requests={activeRequests} />
-
-          <AgencyReadinessPanel org={org} />
-
-          <div
-            ref={workspaceRef}
-            className="flex flex-col gap-3 lg:grid lg:gap-0 lg:h-[640px]"
-            style={{ gridTemplateColumns: `${mapWidth}fr 12px ${100 - mapWidth}fr` }}
-          >
-            <div className="min-h-[420px] min-w-0 flex">
-              <OperationsMap
-                org={org}
-                requests={topicRequests}
-                selectedId={selectedId}
-                selectedRequest={selectedRequest}
-                onRoute={handleRoute}
-                onSelectRequest={(req) => setSelectedId(selectedId === req.id ? null : req.id)}
-              />
-            </div>
-
-            <div className="hidden lg:flex items-stretch justify-center">
-              <button
-                type="button"
-                onPointerDown={handleResizeStart}
-                className="group flex h-full w-3 cursor-col-resize items-center justify-center rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400"
-                aria-label="Resize map and request queue"
-                aria-orientation="vertical"
-                role="separator"
-              >
-                <span className="h-16 w-1 rounded-full bg-slate-300 transition-colors group-hover:bg-blue-400" />
-              </button>
-            </div>
-
-            <div className="min-h-[380px] min-w-0 flex">
-              <RequestQueue
-                org={org}
-                requests={activeRequests}
-                selectedId={selectedId}
-                selectedTopic={selectedTopic}
-                onSelectTopic={setSelectedTopic}
-                onSelect={(req) => setSelectedId(selectedId === req.id ? null : req.id)}
-              />
-            </div>
-          </div>
+        <div className="space-y-[22px]">
+          {SUPPORT_GROUPS.map((group) => {
+            const workspaces = WORKSPACES.filter((workspace) => workspace.supportGroup === group.id);
+            return (
+              <section key={group.id} className="space-y-[11px]">
+                <h2 className="text-[13px] font-semibold uppercase tracking-wider text-slate-400">{group.title}</h2>
+                <div className="grid gap-[13px] sm:grid-cols-2 lg:grid-cols-3">
+                  {workspaces.map((workspace) => (
+                    <WorkspaceButton key={workspace.id} workspace={workspace} />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
         </div>
-      </main>
+      </div>
+    </main>
+  );
+}
 
-      {selectedRequest && (
-        <RequestDetailDrawer
-          request={selectedRequest}
-          org={org}
-          onClose={() => setSelectedId(null)}
-          onUpdate={handleUpdate}
-        />
-      )}
-    </div>
+function WorkspaceButton({ workspace }: { workspace: WorkspaceConfig }) {
+  return (
+    <Link
+      href={`/${workspace.slug}`}
+      className="group flex min-h-[88px] items-center gap-[13px] rounded-lg border border-slate-200 bg-white px-[18px] py-[13px] shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+    >
+      <span className="grid h-[53px] w-[53px] shrink-0 place-items-center overflow-hidden rounded-xl bg-white ring-1 ring-black/[0.06]">
+        {workspace.logo ? (
+          // eslint-disable-next-line @next/next/no-img-element -- small static /public logo grid
+          <img src={workspace.logo} alt="" className="h-full w-full object-contain" />
+        ) : (
+          <span className="text-[15px] font-semibold text-slate-500">{workspace.name.charAt(0)}</span>
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[17px] font-semibold text-slate-800">{workspace.name}</span>
+      </span>
+      <ArrowRight size={18} className="shrink-0 text-slate-300 transition-colors group-hover:text-slate-500" />
+    </Link>
   );
 }

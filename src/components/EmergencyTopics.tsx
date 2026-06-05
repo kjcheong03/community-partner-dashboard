@@ -47,7 +47,7 @@ export default function EmergencyTopics({ org, requests, topics, selectedTopic, 
   const linkedTotal = summaries.reduce((sum, s) => sum + s.linked.length, 0);
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200 px-4 py-3 shadow-sm">
+    <div className="ops-card px-4 py-3">
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-100 bg-white text-red-500 shrink-0">
@@ -188,33 +188,17 @@ function OrgFooter({ org, topic, linked }: { org: OrgId; topic: EmergencyTopic; 
           <Users size={12} className="text-amber-500" /> {repeats} repeat household{repeats === 1 ? "" : "s"}
         </span>
         <span className="flex items-center gap-1 text-slate-600">
-          <AlertTriangle size={12} className="text-purple-500" /> {watchList} on care-review watch list
+          <AlertTriangle size={12} className="text-slate-400" /> {watchList} on care-review watch list
         </span>
       </div>
     );
   }
 
   const note = topic.orgNotes[org];
-  const noteTone =
-    org === "SGCares"
-      ? "text-blue-700 bg-blue-50/60"
-      : org === "AACSGO"
-        ? "text-purple-700 bg-purple-50/60"
-        : org === "SSOFSC"
-          ? "text-green-700 bg-green-50/60"
-          : "text-teal-700 bg-teal-50/60";
-  const iconTone =
-    org === "SGCares"
-      ? "text-blue-500"
-      : org === "AACSGO"
-        ? "text-purple-500"
-        : org === "SSOFSC"
-          ? "text-green-500"
-          : "text-teal-500";
 
   return (
-    <div className={cn("mt-3 pt-3 border-t border-slate-100 flex items-start gap-1.5 text-xs -mx-1 px-2 py-1.5 rounded-lg", noteTone)}>
-      <Megaphone size={13} className={cn("mt-0.5 shrink-0", iconTone)} />
+    <div className="mt-3 -mx-1 flex items-start gap-1.5 rounded-lg border-t border-slate-100 bg-slate-50 px-2 py-1.5 pt-3 text-xs text-slate-600">
+      <Megaphone size={13} className="mt-0.5 shrink-0 text-slate-400" />
       <span className="leading-relaxed">{note}</span>
     </div>
   );

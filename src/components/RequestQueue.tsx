@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { Search, X, AlertTriangle } from "lucide-react";
 import type { HelpRequest, Topic, Status, Urgency } from "@/lib/types";
 import type { OrgId } from "@/lib/orgs";
-import { caseDomainColor, caseDomainLabel, cn, urgencyColor, statusColor, formatDateTime } from "@/lib/utils";
+import { caseDomainColor, caseDomainLabel, cn, urgencyDot, statusColor, formatDateTime } from "@/lib/utils";
 import { repeatRecipientNames } from "@/lib/analytics";
 
 type Props = {
@@ -75,19 +75,24 @@ export default function RequestQueue({ org, requests, selectedId, selectedTopic,
   ).length;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 flex flex-col h-full w-full min-h-0">
-      <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3 flex-wrap shrink-0">
-        <div className="flex-1 min-w-[160px]">
-          <h2 className="font-semibold text-slate-800 text-sm">Request Queue</h2>
-          <p className="text-xs text-slate-400 flex items-center gap-2">
+    <div className="ops-card flex h-full w-full min-h-0 flex-col">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-3">
+        <div className="min-w-[160px] flex-1">
+          <h2 className="text-sm font-semibold text-slate-800">Request Queue</h2>
+          <p className="mt-0.5 flex items-center gap-2 text-xs text-slate-400">
             <span>{filtered.length} shown</span>
             <span className="text-slate-300">·</span>
-            <span className="text-blue-600 font-medium">{openCount} open</span>
-            <span className="text-red-600 font-medium">{urgentCount} urgent</span>
+            <span className="font-medium text-slate-600">{openCount} open</span>
+            {urgentCount > 0 && (
+              <span className="inline-flex items-center gap-1 font-medium text-red-600">
+                <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                {urgentCount} urgent
+              </span>
+            )}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex flex-wrap items-center gap-2">
           <Pill label="Topic" value={selectedTopic} onChange={(v) => onSelectTopic(v as typeof selectedTopic)} options={TOPICS} />
           <Pill label="Status" value={status} onChange={(v) => setStatus(v as typeof status)} options={STATUSES} />
           <Pill label="Urgency" value={urgency} onChange={(v) => setUrgency(v as typeof urgency)} options={URGENCIES} />
@@ -98,13 +103,13 @@ export default function RequestQueue({ org, requests, selectedId, selectedTopic,
               placeholder="Search..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-7 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 w-32"
+              className="w-32 rounded-md border border-slate-200 py-1.5 pl-7 pr-3 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
           </div>
           {hasActiveFilters && (
             <button
               onClick={clearFilters}
-              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 border border-slate-200 rounded-lg px-2 py-1.5 hover:bg-slate-50 transition-colors"
+              className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800"
             >
               <X size={11} /> Clear
             </button>
@@ -112,10 +117,10 @@ export default function RequestQueue({ org, requests, selectedId, selectedTopic,
         </div>
       </div>
 
-      <div className="overflow-auto flex-1 min-h-0">
-        <table className="w-full text-xs min-w-[760px]">
+      <div className="min-h-0 flex-1 overflow-auto thin-scrollbar">
+        <table className="w-full min-w-[760px] text-xs">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase tracking-wide">
+            <tr className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-400">
               <Th>ID</Th>
               <Th>Topic</Th>
               <Th>Domain</Th>
@@ -129,7 +134,7 @@ export default function RequestQueue({ org, requests, selectedId, selectedTopic,
               <Th>Submitted</Th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-50">
+          <tbody className="divide-y divide-slate-100">
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={12} className="px-4 py-10 text-center">
@@ -150,16 +155,17 @@ export default function RequestQueue({ org, requests, selectedId, selectedTopic,
                     key={req.id}
                     onClick={() => onSelect(req)}
                     className={cn(
-                      "cursor-pointer hover:bg-blue-50 transition-colors",
-                      selectedId === req.id && "bg-blue-50 ring-2 ring-inset ring-blue-400",
-                      isRepeat && selectedId !== req.id && "bg-purple-50/60"
+                      "cursor-pointer transition-colors",
+                      selectedId === req.id
+                        ? "bg-blue-50 shadow-[inset_3px_0_0_#2563eb]"
+                        : "hover:bg-slate-50"
                     )}
                   >
-                    <Td className="font-mono text-slate-400 font-medium">
+                    <Td className="font-mono font-medium text-slate-400">
                       <div className="flex items-center gap-1.5">
                         {req.id}
                         {isRepeat && (
-                          <span className="text-[9px] font-semibold px-1 py-0.5 rounded bg-purple-100 text-purple-700">
+                          <span className="rounded bg-slate-100 px-1 py-0.5 text-[9px] font-semibold text-slate-500">
                             Repeat
                           </span>
                         )}
@@ -167,27 +173,28 @@ export default function RequestQueue({ org, requests, selectedId, selectedTopic,
                     </Td>
                     <Td className="text-slate-500">{req.topic}</Td>
                     <Td>
-                      <span className={cn("inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap", caseDomainColor(req.caseDomain))}>
+                      <span className={cn("inline-flex items-center gap-1 whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-semibold", caseDomainColor(req.caseDomain))}>
                         {req.caseDomain}
-                        <span className="hidden xl:inline font-medium">{caseDomainLabel(req.caseDomain)}</span>
+                        <span className="hidden font-medium xl:inline">{caseDomainLabel(req.caseDomain)}</span>
                       </span>
                     </Td>
-                    <Td className="text-slate-700 font-medium">{req.helpType}</Td>
+                    <Td className="font-medium text-slate-700">{req.helpType}</Td>
                     <Td className="text-slate-500">{req.area}</Td>
                     <Td>
-                      <span className={cn("font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap", urgencyColor(req.urgency))}>
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium text-slate-600">
+                        <span className={cn("h-1.5 w-1.5 rounded-full", urgencyDot(req.urgency))} />
                         {req.urgency}
                       </span>
                     </Td>
                     <Td>
-                      <span className={cn("inline-flex min-w-[72px] justify-center rounded-md px-2 py-1 text-[11px] font-semibold whitespace-nowrap shadow-sm", statusColor(req.status))}>
+                      <span className={cn("inline-flex min-w-[72px] justify-center whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-medium", statusColor(req.status))}>
                         {req.status}
                       </span>
                     </Td>
                     {showPartnerCol && (
                       <Td>
                         {unassigned ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
                             <AlertTriangle size={10} /> Unassigned
                           </span>
                         ) : (
@@ -218,11 +225,11 @@ export default function RequestQueue({ org, requests, selectedId, selectedTopic,
 }
 
 function Th({ children }: { children: React.ReactNode }) {
-  return <th className="text-left font-medium px-4 py-2">{children}</th>;
+  return <th className="px-4 py-2.5 text-left font-semibold">{children}</th>;
 }
 
 function Td({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <td className={cn("px-4 py-3 align-middle", className)}>{children}</td>;
+  return <td className={cn("h-12 px-4 align-middle", className)}>{children}</td>;
 }
 
 function Pill<T extends string>({
@@ -241,8 +248,10 @@ function Pill<T extends string>({
       value={value}
       onChange={(e) => onChange(e.target.value as T)}
       className={cn(
-        "text-xs border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white transition-colors",
-        value === "All" ? "border-slate-200 text-slate-500" : "border-blue-300 text-blue-700 bg-blue-50"
+        "rounded-md border bg-white px-2 py-1.5 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/40",
+        value === "All"
+          ? "border-slate-200 text-slate-500"
+          : "border-slate-300 font-medium text-slate-800"
       )}
     >
       {options.map((o) => (

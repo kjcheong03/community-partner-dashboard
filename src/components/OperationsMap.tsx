@@ -35,13 +35,15 @@ function assignedFacilityName(org: OrgId, r: HelpRequest): string | undefined {
 
 const CLOSED = new Set(["Fulfilled", "Unable To Fulfil", "Rerouted"]);
 
+// Partner facilities share one deep-navy identity (only one org's facilities show
+// at a time); clinics/hospitals are the single exception in red.
 const FACILITY_STYLE: Record<FacilityType, { bg: string; glyph: string }> = {
-  hub: { bg: "#1e3a8a", glyph: "AIC" },
-  office: { bg: "#4f46e5", glyph: "VC" },
-  outreach: { bg: "#7e22ce", glyph: "SG" },
-  support: { bg: "#15803d", glyph: "SS" },
-  care: { bg: "#0d9488", glyph: "CS" },
-  clinic: { bg: "#be123c", glyph: "+" },
+  hub: { bg: "#1e293b", glyph: "AIC" },
+  office: { bg: "#1e293b", glyph: "VC" },
+  outreach: { bg: "#1e293b", glyph: "SG" },
+  support: { bg: "#1e293b", glyph: "SS" },
+  care: { bg: "#1e293b", glyph: "CS" },
+  clinic: { bg: "#dc2626", glyph: "+" },
 };
 
 function facilityIcon(f: Facility, opts: { assigned?: boolean; target?: boolean } = {}) {
@@ -166,34 +168,34 @@ export default function OperationsMap({ org, requests, selectedId, onSelectReque
   const mapKey = `${org}-${MAP_RENDER_VERSION}`;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 flex flex-col h-full min-h-[360px] w-full">
-      <div className="px-4 py-3 border-b border-slate-100 flex items-start justify-between gap-3 flex-wrap">
+    <div className="ops-card flex h-full min-h-[360px] w-full flex-col">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-4 py-3">
         <div>
-          <h2 className="font-semibold text-slate-800 text-sm">Operations Map — {orgConfig.shortName}</h2>
+          <h2 className="text-sm font-semibold text-slate-800">Operations Map — {orgConfig.shortName}</h2>
           {routingReq ? (
-            <p className="text-xs text-blue-600 mt-0.5 font-medium">
+            <p className="mt-0.5 text-xs font-medium text-blue-600">
               Routing {routingReq.id} · click a {ownFacilityLabel(org)} marker to assign
               {assignedFacility ? ` · now: ${assignedFacility.name}` : ""}
             </p>
           ) : (
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="mt-0.5 text-xs text-slate-400">
               {openCount} open request{openCount === 1 ? "" : "s"} · {areaGroups.length} area
               {areaGroups.length === 1 ? "" : "s"} with cases · click a numbered area for detail
             </p>
           )}
         </div>
-        <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-slate-500">
           <Legend color={AREA_TONE.active.color} label="Active" />
           <Legend color={AREA_TONE.elevated.color} label="Elevated" />
-          <Legend color={AREA_TONE.high.color} label="High priority" />
+          <Legend color={AREA_TONE.high.color} label="High" />
           <Legend color={AREA_TONE.resolved.color} label="Resolved" />
-          <span className="text-slate-300">|</span>
+          <span className="h-3 w-px bg-slate-200" />
           <FacilityLegend type={ownFacilities(org)[0]?.type ?? "hub"} />
           <FacilityLegend type="clinic" />
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 rounded-b-xl overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-hidden rounded-b-[0.625rem]">
         <MapContainer
           key={mapKey}
           center={[1.345, 103.84]}
@@ -379,7 +381,7 @@ export default function OperationsMap({ org, requests, selectedId, onSelectReque
 function Legend({ color, label }: { color: string; label: string }) {
   return (
     <span className="flex items-center gap-1.5">
-      <span className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
+      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
       {label}
     </span>
   );

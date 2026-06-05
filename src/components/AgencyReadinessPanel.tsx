@@ -33,14 +33,13 @@ export default function AgencyReadinessPanel({ org }: Props) {
   }
 
   function statusClass(status: ReadinessItem["status"]) {
-    if (status === "OK") return "bg-emerald-500";
-    if (status === "Low") return "bg-amber-500";
-    return "bg-amber-500";
+    if (status === "OK") return "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200";
+    return "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200";
   }
 
   return (
-    <section className="bg-white rounded-lg border border-slate-200 px-3 py-2">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2">
+    <section className="ops-card px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2.5">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-slate-800 truncate">{title}</h2>
           <p className="text-xs text-slate-400">
@@ -89,7 +88,7 @@ export default function AgencyReadinessPanel({ org }: Props) {
                   <p className="text-xs font-semibold text-slate-700 truncate">{item.name}</p>
                   <p className="text-[10px] text-slate-400 truncate">{item.quantity} {item.unit}</p>
                 </div>
-                <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-white", statusClass(item.status))}>
+                <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold", statusClass(item.status))}>
                   {item.status}
                 </span>
               </div>
