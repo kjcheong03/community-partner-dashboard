@@ -26,8 +26,9 @@ import {
   type WorkItem,
 } from "@/lib/contract";
 import { countByArea, generateSessions } from "@/lib/mock";
+import type { DashboardScheduleAssignment, ScheduleStatus } from "@/lib/schedule";
 import type { WorkspaceConfig } from "@/lib/workspaces";
-import { updateInventoryStockAction, updateWorkItemStatusAction } from "@/app/actions";
+import { updateInventoryStockAction, updateScheduleAssignmentStatusAction, updateWorkItemStatusAction } from "@/app/actions";
 
 const MapHeatmap = dynamic(() => import("@/components/kit/MapHeatmap"), { ssr: false });
 
@@ -46,9 +47,14 @@ type Props = {
   workspace: WorkspaceConfig;
   initialSessions?: RequestSession[];
   initialInventoryRows?: InventoryRow[] | null;
+  initialScheduleAssignments?: DashboardScheduleAssignment[] | null;
 };
 
-export default function WorkspaceDashboard({ workspace, initialSessions, initialInventoryRows }: Props) {
+type ScheduledWorkItem = WorkItem & {
+  scheduleAssignment?: DashboardScheduleAssignment;
+};
+
+export default function WorkspaceDashboard({ workspace, initialSessions, initialInventoryRows, initialScheduleAssignments }: Props) {
   const router = useRouter();
   const liveData = initialSessions !== undefined;
   const [isRefreshing, startRefreshTransition] = useTransition();
@@ -59,7 +65,12 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
   const [regionFilter, setRegionFilter] = useState<string | null>(null);
 
   const allItems = useMemo(() => itemsForWorkspace(sessions, workspace), [sessions, workspace]);
-  const scheduledItems = useMemo(() => scheduledWorkItemsForWorkspace(allItems, workspace), [allItems, workspace]);
+  const scheduledItems = useMemo(
+    () => initialScheduleAssignments !== undefined
+      ? scheduledWorkItemsFromAssignments(allItems, initialScheduleAssignments ?? [])
+      : scheduledWorkItemsForWorkspace(allItems, workspace),
+    [allItems, initialScheduleAssignments, workspace]
+  );
   const scheduleItems = useMemo(() => scheduleItemsFromWorkItems(scheduledItems), [scheduledItems]);
   const inventory = useMemo(
     () => initialInventoryRows !== undefined
@@ -121,6 +132,24 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
 
     if (!result.ok) {
       console.error("Failed to update inventory stock", result.error);
+      return;
+    }
+
+    router.refresh();
+  }
+
+  async function handleScheduleStatusChange(item: ScheduledWorkItem, next: ScheduleStatus) {
+    const assignmentId = item.scheduleAssignment?.id;
+    if (!liveData || !assignmentId) return;
+
+    const result = await updateScheduleAssignmentStatusAction({
+      workspaceSlug: workspace.slug,
+      scheduleAssignmentId: assignmentId,
+      next,
+    });
+
+    if (!result.ok) {
+      console.error("Failed to update schedule assignment", result.error);
       return;
     }
 
@@ -244,6 +273,7 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
         {selectedSchedule && (
           <ScheduleDetailPanel
             item={selectedSchedule}
+            onScheduleStatusChange={handleScheduleStatusChange}
             onClose={() => setSelectedScheduleId(null)}
           />
         )}
@@ -308,9 +338,38 @@ function scheduledWorkItemsForWorkspace(items: WorkItem[], workspace: WorkspaceC
   });
 }
 
-function scheduleItemsFromWorkItems(items: WorkItem[]): ScheduleItem[] {
+function scheduledWorkItemsFromAssignments(items: WorkItem[], assignments: DashboardScheduleAssignment[]): ScheduledWorkItem[] {
+  return assignments
+    .flatMap((assignment) => {
+      const item = items.find((candidate) => scheduleAssignmentMatchesWorkItem(assignment, candidate));
+      if (!item) return [];
+
+      return [{
+        ...item,
+        id: `schedule:${assignment.id}`,
+        status: assignment.requestStatus,
+        task: {
+          ...item.task,
+          assignedTo: assignment.assigneeName,
+          scheduledFor: assignment.scheduledFor,
+          partnerNotes: assignment.notes ?? item.task.partnerNotes,
+        },
+        scheduleAssignment: assignment,
+      }];
+    })
+    .sort((a, b) => new Date(a.scheduleAssignment?.scheduledFor ?? 0).getTime() - new Date(b.scheduleAssignment?.scheduledFor ?? 0).getTime());
+}
+
+function scheduleAssignmentMatchesWorkItem(assignment: DashboardScheduleAssignment, item: WorkItem) {
+  if (assignment.routeId) return workItemRouteDbId(item) === assignment.routeId;
+  if (assignment.taskId) return workItemTaskDbId(item) === assignment.taskId;
+  return false;
+}
+
+function scheduleItemsFromWorkItems(items: ScheduledWorkItem[]): ScheduleItem[] {
   return items.map((it) => {
     const type = it.task.selectedSubtypes[0] || it.route?.label || supportTypeLabels[it.supportType];
+    const scheduleStatus = it.scheduleAssignment?.scheduleStatus;
     return {
       id: it.id,
       title: `${type} · ${it.session.careRecipientName}`,
@@ -318,7 +377,7 @@ function scheduleItemsFromWorkItems(items: WorkItem[]): ScheduleItem[] {
       meta: `${it.session.generalArea ?? "Unknown area"} · ${it.status}`,
       assignee: it.task.assignedTo?.trim() || "Unassigned",
       status: it.status,
-      scheduleStatus: it.status === "In progress" ? "In progress" : it.status === "Completed" ? "Completed" : "Scheduled",
+      scheduleStatus: scheduleStatus ?? (it.status === "In progress" ? "In progress" : it.status === "Completed" ? "Completed" : "Scheduled"),
       visitMode: visitModeFromWorkItem(it),
       priority: deriveUrgency(it.task, it.session.createdAt),
       kind: it.supportType,

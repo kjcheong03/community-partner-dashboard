@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Boxes, ChevronLeft, ChevronRight, Compass, HeartPulse, Home, PhoneCall, Soup, Truck, Video, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { ScheduleStatus } from "@/lib/schedule";
 
 export type ScheduleItem = {
   id: string;
@@ -11,7 +12,7 @@ export type ScheduleItem = {
   meta?: string;
   assignee?: string;
   status?: string;
-  scheduleStatus?: "Scheduled" | "In progress" | "Completed";
+  scheduleStatus?: ScheduleStatus;
   visitMode?: "home" | "video" | "phone";
   priority?: "High" | "Medium" | "Low";
   kind?: "supplies" | "food" | "welfare" | "transport" | "referral";

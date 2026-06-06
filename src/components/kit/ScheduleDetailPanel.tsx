@@ -1,26 +1,33 @@
 "use client";
 
-import { CalendarClock, CheckCircle2, RefreshCw, X } from "lucide-react";
+import { Ban, CalendarClock, CheckCircle2, PlayCircle, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WorkItem } from "@/lib/contract";
 import { supportTypeLabels } from "@/lib/contract";
+import type { DashboardScheduleAssignment, ScheduleStatus } from "@/lib/schedule";
 import { detailRows, formatSubmitted, neededByLabel } from "./format";
 import StatusBadge from "./StatusBadge";
 
+type ScheduledWorkItem = WorkItem & {
+  scheduleAssignment?: DashboardScheduleAssignment;
+};
+
 type Props = {
-  item: WorkItem;
+  item: ScheduledWorkItem;
+  onScheduleStatusChange?: (item: ScheduledWorkItem, next: ScheduleStatus) => void;
   onClose?: () => void;
   className?: string;
 };
 
-export default function ScheduleDetailPanel({ item, onClose, className }: Props) {
+export default function ScheduleDetailPanel({ item, onScheduleStatusChange, onClose, className }: Props) {
   const { task, session, route } = item;
   const title = route ? route.label : supportTypeLabels[item.supportType];
   const scheduledFor = typeof task.scheduledFor === "string" ? task.scheduledFor : "";
   const assignee = task.assignedTo?.trim() || "Unassigned";
-  const scheduleState = item.status === "In progress" ? "In progress" : item.status === "Completed" ? "Completed" : "Scheduled";
+  const scheduleState = item.scheduleAssignment?.scheduleStatus ?? (item.status === "In progress" ? "In progress" : item.status === "Completed" ? "Completed" : "Scheduled");
   const rows = detailRows(task, route?.label);
   const dispatchRows = dispatchRowsForItem(item, scheduledFor, assignee);
+  const scheduleTransitions = item.scheduleAssignment ? scheduleStatusTransitions(scheduleState) : [];
 
   return (
     <div className={cn("ops-card flex h-full min-h-0 flex-col", className)}>
@@ -77,21 +84,58 @@ export default function ScheduleDetailPanel({ item, onClose, className }: Props)
       </div>
 
       <div className="border-t border-slate-200 px-5 py-4">
-        {item.status === "Completed" ? (
-          <p className="text-xs text-slate-400">This scheduled visit is complete.</p>
+        {scheduleTransitions.length === 0 ? (
+          <p className="text-xs text-slate-400">No further schedule actions are available.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800">
-              <CheckCircle2 size={13} /> Complete
-            </button>
-            <button type="button" className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
-              <RefreshCw size={13} /> Reschedule
-            </button>
+            {scheduleTransitions.map((next) => (
+              <button
+                key={next}
+                type="button"
+                onClick={() => onScheduleStatusChange?.(item, next)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  next === "Cancelled"
+                    ? "border border-slate-200 text-slate-600 hover:bg-slate-50"
+                    : "bg-slate-900 text-white hover:bg-slate-800"
+                )}
+              >
+                {next === "In progress" && <PlayCircle size={13} />}
+                {next === "Completed" && <CheckCircle2 size={13} />}
+                {next === "Cancelled" && <Ban size={13} />}
+                {scheduleActionLabel(next)}
+              </button>
+            ))}
           </div>
         )}
       </div>
     </div>
   );
+}
+
+function scheduleStatusTransitions(status: ScheduleStatus): ScheduleStatus[] {
+  switch (status) {
+    case "Scheduled":
+    case "Rescheduled":
+      return ["In progress", "Completed", "Cancelled"];
+    case "In progress":
+      return ["Completed", "Cancelled"];
+    default:
+      return [];
+  }
+}
+
+function scheduleActionLabel(status: ScheduleStatus): string {
+  switch (status) {
+    case "In progress":
+      return "Start visit";
+    case "Completed":
+      return "Complete";
+    case "Cancelled":
+      return "Cancel";
+    default:
+      return status;
+  }
 }
 
 function dispatchRowsForItem(item: WorkItem, scheduledFor: string, assignee: string) {

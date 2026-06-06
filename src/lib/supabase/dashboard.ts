@@ -1,7 +1,5 @@
 import { createSupabaseServerClient, hasSupabaseServerConfig } from "./server";
 import {
-  rollupStatus,
-  taskStatus,
   type FulfilmentRoute,
   type RequestSession,
   type RequestStatus,
@@ -9,6 +7,7 @@ import {
   type SupportTypeId,
 } from "@/lib/contract";
 import type { InventoryRow, InventoryStatus } from "@/components/kit/InventoryTable";
+import type { DashboardScheduleAssignment, ScheduleStatus } from "@/lib/schedule";
 import type { WorkspaceConfig } from "@/lib/workspaces";
 
 type RequestRouteRow = {
@@ -27,28 +26,19 @@ type RequestRouteRow = {
   lifecycle: RequestStatus | null;
 };
 
-type RequestTaskRow = {
-  id: string;
-  task_key: string;
-  fulfilment: RequestTaskSession["fulfilment"];
+type WorkspaceWorkItemRow = {
+  workspace_id: string;
+  relation: "primary" | "backup" | "owner";
+  item_kind: "partner-task" | "food-route" | "supplies-route";
+  session_id: string;
+  task_id: string;
+  route_id: string | null;
   support_type: SupportTypeId;
-  selected_subtypes: string[] | null;
-  details: Record<string, unknown> | null;
-  primary_org_id: string | null;
-  fallback_org_ids: string[] | null;
-  cost_estimate: RequestTaskSession["costEstimate"] | null;
   status: RequestStatus;
-  assigned_to: string | null;
-  rejection_reason: string | null;
-  scheduled_for: string | null;
-  partner_notes: string | null;
-  request_routes?: RequestRouteRow[] | null;
-};
-
-type RequestSessionRow = {
-  id: string;
-  care_recipient_name: string;
+  overall_status: RequestStatus;
+  created_at: string;
   caregiver_name: string;
+  care_recipient_name: string;
   contact_number: string;
   contact_method: string;
   email: string | null;
@@ -58,9 +48,17 @@ type RequestSessionRow = {
   postal_code: string | null;
   access_notes: string | null;
   linked_topic: string;
-  overall_status: RequestStatus;
-  created_at: string;
-  request_tasks?: RequestTaskRow[] | null;
+  selected_subtypes: string[] | null;
+  details: Record<string, unknown> | null;
+  cost_estimate: RequestTaskSession["costEstimate"] | null;
+  assigned_to: string | null;
+  rejection_reason: string | null;
+  scheduled_for: string | null;
+  partner_notes: string | null;
+  route_label: string | null;
+  route_type: FulfilmentRoute["routeType"] | null;
+  route_status: string | null;
+  route_lifecycle: RequestStatus | null;
 };
 
 type InventoryDashboardRow = {
@@ -79,9 +77,26 @@ type InventoryDashboardRow = {
   stock_status: InventoryStatus;
 };
 
+type ScheduleDashboardRow = {
+  id: string;
+  workspace_id: string;
+  task_id: string | null;
+  route_id: string | null;
+  route_label: string | null;
+  support_type: SupportTypeId;
+  request_status: RequestStatus;
+  assignee_name: string | null;
+  scheduled_for: string;
+  schedule_status: ScheduleStatus;
+  rescheduled_from: string | null;
+  notes: string | null;
+  session_id: string;
+};
+
 export type WorkspaceDashboardData = {
   sessions: RequestSession[];
   inventoryRows: InventoryRow[] | null;
+  scheduleAssignments: DashboardScheduleAssignment[] | null;
 };
 
 export async function fetchWorkspaceDashboardData(workspace: WorkspaceConfig): Promise<WorkspaceDashboardData | null> {
@@ -89,13 +104,26 @@ export async function fetchWorkspaceDashboardData(workspace: WorkspaceConfig): P
 
   const supabase = createSupabaseServerClient();
 
-  const [{ data: sessionRows, error: sessionsError }, { data: inventoryRows, error: inventoryError }] = await Promise.all([
+  const [
+    { data: workItemRows, error: workItemsError },
+    { data: inventoryRows, error: inventoryError },
+    { data: scheduleRows, error: scheduleError },
+  ] = await Promise.all([
     supabase
-      .from("request_sessions")
+      .from("workspace_work_items")
       .select(`
-        id,
-        care_recipient_name,
+        workspace_id,
+        relation,
+        item_kind,
+        session_id,
+        task_id,
+        route_id,
+        support_type,
+        status,
+        overall_status,
+        created_at,
         caregiver_name,
+        care_recipient_name,
         contact_number,
         contact_method,
         email,
@@ -105,40 +133,19 @@ export async function fetchWorkspaceDashboardData(workspace: WorkspaceConfig): P
         postal_code,
         access_notes,
         linked_topic,
-        overall_status,
-        created_at,
-        request_tasks (
-          id,
-          task_key,
-          fulfilment,
-          support_type,
-          selected_subtypes,
-          details,
-          primary_org_id,
-          fallback_org_ids,
-          cost_estimate,
-          status,
-          assigned_to,
-          rejection_reason,
-          scheduled_for,
-          partner_notes,
-          request_routes (
-            id,
-            workspace_id,
-            label,
-            quantity,
-            route_name,
-            logo,
-            organisation_id,
-            route_type,
-            availability_mode,
-            cost_label,
-            detail,
-            status,
-            lifecycle
-          )
-        )
+        selected_subtypes,
+        details,
+        cost_estimate,
+        assigned_to,
+        rejection_reason,
+        scheduled_for,
+        partner_notes,
+        route_label,
+        route_type,
+        route_status,
+        route_lifecycle
       `)
+      .eq("workspace_id", workspace.id)
       .order("created_at", { ascending: false }),
     workspace.inventoryKind
       ? supabase
@@ -148,59 +155,152 @@ export async function fetchWorkspaceDashboardData(workspace: WorkspaceConfig): P
           .order("item_group", { ascending: true, nullsFirst: false })
           .order("item_name", { ascending: true })
       : Promise.resolve({ data: null, error: null }),
+    workspace.scheduleKind
+      ? supabase
+          .from("schedule_dashboard")
+          .select(`
+            id,
+            workspace_id,
+            task_id,
+            route_id,
+            route_label,
+            support_type,
+            request_status,
+            assignee_name,
+            scheduled_for,
+            schedule_status,
+            rescheduled_from,
+            notes,
+            session_id
+          `)
+          .eq("workspace_id", workspace.id)
+          .order("scheduled_for", { ascending: true })
+      : Promise.resolve({ data: null, error: null }),
   ]);
 
-  if (sessionsError) {
-    console.error("Failed to load Supabase request sessions", sessionsError);
+  if (workItemsError) {
+    console.error("Failed to load Supabase workspace work items", workItemsError);
     return null;
   }
   if (inventoryError) {
     console.error("Failed to load Supabase inventory", inventoryError);
     return null;
   }
+  if (scheduleError) {
+    console.error("Failed to load Supabase schedule assignments", scheduleError);
+    return null;
+  }
+
+  const scopedWorkItemRows = (workItemRows ?? []) as WorkspaceWorkItemRow[];
+  const routeDetails = await fetchRouteDetails(scopedWorkItemRows);
 
   return {
-    sessions: mapRequestSessions((sessionRows ?? []) as RequestSessionRow[]),
+    sessions: mapWorkspaceWorkItemSessions(scopedWorkItemRows, routeDetails),
     inventoryRows: workspace.inventoryKind
       ? mapInventoryRows((inventoryRows ?? []) as InventoryDashboardRow[], workspace)
+      : null,
+    scheduleAssignments: workspace.scheduleKind
+      ? mapScheduleAssignments((scheduleRows ?? []) as ScheduleDashboardRow[])
       : null,
   };
 }
 
-function mapRequestSessions(rows: RequestSessionRow[]): RequestSession[] {
-  return rows.map((row) => {
-    const tasks = (row.request_tasks ?? []).map(mapRequestTask);
-    return {
-      id: row.id,
-      careRecipientName: row.care_recipient_name,
-      caregiverName: row.caregiver_name,
-      contactNumber: row.contact_number,
-      contactMethod: row.contact_method,
-      email: row.email ?? undefined,
-      relationship: row.relationship ?? undefined,
-      generalArea: row.general_area ?? undefined,
-      address: row.address ?? undefined,
-      postalCode: row.postal_code ?? undefined,
-      accessNotes: row.access_notes ?? undefined,
-      linkedTopic: row.linked_topic,
-      createdAt: row.created_at,
-      overallStatus: tasks.length ? rollupStatus(tasks.map(taskStatus)) : row.overall_status,
-      tasks,
-    };
-  });
+async function fetchRouteDetails(rows: WorkspaceWorkItemRow[]): Promise<Map<string, RequestRouteRow>> {
+  const routeIds = [...new Set(rows.map((row) => row.route_id).filter((id): id is string => Boolean(id)))];
+  if (!routeIds.length) return new Map();
+
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("request_routes")
+    .select(`
+      id,
+      workspace_id,
+      label,
+      quantity,
+      route_name,
+      logo,
+      organisation_id,
+      route_type,
+      availability_mode,
+      cost_label,
+      detail,
+      status,
+      lifecycle
+    `)
+    .in("id", routeIds);
+
+  if (error) {
+    console.error("Failed to load Supabase route details", error);
+    return new Map();
+  }
+
+  return new Map(((data ?? []) as RequestRouteRow[]).map((row) => [row.id, row]));
 }
 
-function mapRequestTask(row: RequestTaskRow): RequestTaskSession {
-  const task: RequestTaskSession & { dbId?: string } = {
-    id: row.task_key || row.support_type,
-    dbId: row.id,
-    fulfilment: row.fulfilment,
+function mapWorkspaceWorkItemSessions(
+  rows: WorkspaceWorkItemRow[],
+  routeDetails: Map<string, RequestRouteRow>,
+): RequestSession[] {
+  const sessions = new Map<string, RequestSession>();
+  const tasksBySession = new Map<string, Map<string, RequestTaskSession & { dbId?: string }>>();
+
+  for (const row of rows) {
+    let session = sessions.get(row.session_id);
+    if (!session) {
+      session = {
+        id: row.session_id,
+        careRecipientName: row.care_recipient_name,
+        caregiverName: row.caregiver_name,
+        contactNumber: row.contact_number,
+        contactMethod: row.contact_method,
+        email: row.email ?? undefined,
+        relationship: row.relationship ?? undefined,
+        generalArea: row.general_area ?? undefined,
+        address: row.address ?? undefined,
+        postalCode: row.postal_code ?? undefined,
+        accessNotes: row.access_notes ?? undefined,
+        linkedTopic: row.linked_topic,
+        createdAt: row.created_at,
+        overallStatus: row.overall_status,
+        tasks: [],
+      };
+      sessions.set(row.session_id, session);
+      tasksBySession.set(row.session_id, new Map());
+    }
+
+    const taskMap = tasksBySession.get(row.session_id);
+    if (!taskMap) continue;
+
+    let task = taskMap.get(row.task_id);
+    if (!task) {
+      task = mapWorkspaceWorkItemTask(row);
+      taskMap.set(row.task_id, task);
+      session.tasks.push(task);
+    }
+
+    if (row.route_id) {
+      const route = mapWorkspaceWorkItemRoute(row, routeDetails.get(row.route_id));
+      if (route && !task.fulfilmentRoutes?.some((existing) => requestRouteDbId(existing) === row.route_id)) {
+        task.fulfilmentRoutes = [...(task.fulfilmentRoutes ?? []), route];
+      }
+    }
+  }
+
+  return [...sessions.values()].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+function mapWorkspaceWorkItemTask(row: WorkspaceWorkItemRow): RequestTaskSession & { dbId?: string } {
+  const isRouteTask = row.item_kind === "food-route" || row.item_kind === "supplies-route";
+  return {
+    id: row.support_type,
+    dbId: row.task_id,
+    fulfilment: isRouteTask ? "route" : "partner",
     supportType: row.support_type,
     selectedSubtypes: row.selected_subtypes ?? [],
     details: row.details ?? {},
-    primaryOrganisationId: row.primary_org_id ?? "",
-    fallbackOrganisationIds: row.fallback_org_ids ?? [],
-    fulfilmentRoutes: (row.request_routes ?? []).map(mapRequestRoute),
+    primaryOrganisationId: row.relation === "primary" ? row.workspace_id : "",
+    fallbackOrganisationIds: row.relation === "backup" ? [row.workspace_id] : [],
+    fulfilmentRoutes: [],
     costEstimate: row.cost_estimate ?? undefined,
     status: row.status,
     assignedTo: row.assigned_to ?? undefined,
@@ -208,28 +308,29 @@ function mapRequestTask(row: RequestTaskRow): RequestTaskSession {
     scheduledFor: row.scheduled_for ?? undefined,
     partnerNotes: row.partner_notes ?? undefined,
   };
-
-  return task;
 }
 
-function mapRequestRoute(row: RequestRouteRow): FulfilmentRoute {
-  const route: FulfilmentRoute & { dbId?: string; workspaceId?: string } = {
-    dbId: row.id,
-    workspaceId: row.workspace_id,
-    label: row.label,
-    quantity: Number(row.quantity ?? 1),
-    routeName: row.route_name,
-    logo: row.logo ?? undefined,
-    organisationId: row.organisation_id ?? undefined,
-    routeType: row.route_type,
-    availabilityMode: row.availability_mode,
-    costLabel: row.cost_label,
-    detail: row.detail ?? undefined,
-    status: row.status,
-    lifecycle: row.lifecycle ?? undefined,
-  };
+function mapWorkspaceWorkItemRoute(
+  row: WorkspaceWorkItemRow,
+  detail: RequestRouteRow | undefined,
+): (FulfilmentRoute & { dbId?: string; workspaceId?: string }) | null {
+  if (!row.route_id || (!detail && (!row.route_label || !row.route_type))) return null;
 
-  return route;
+  return {
+    dbId: row.route_id,
+    workspaceId: detail?.workspace_id ?? row.workspace_id,
+    label: detail?.label ?? row.route_label ?? "",
+    quantity: Number(detail?.quantity ?? 1),
+    routeName: detail?.route_name ?? row.route_label ?? "",
+    logo: detail?.logo ?? undefined,
+    organisationId: detail?.organisation_id ?? (row.route_type === "partner_service" ? row.workspace_id : undefined),
+    routeType: detail?.route_type ?? row.route_type ?? "public_distribution",
+    availabilityMode: detail?.availability_mode ?? "local_stock_subject_to_availability",
+    costLabel: detail?.cost_label ?? (row.item_kind === "supplies-route" ? "Free" : "Partner assessment"),
+    detail: detail?.detail ?? undefined,
+    status: detail?.status ?? row.route_status ?? "",
+    lifecycle: detail?.lifecycle ?? row.route_lifecycle ?? undefined,
+  };
 }
 
 function mapInventoryRows(rows: InventoryDashboardRow[], workspace: WorkspaceConfig): InventoryRow[] {
@@ -284,6 +385,24 @@ function aggregateInventoryGroup(group: string, children: InventoryRow[]): Inven
     threshold,
     children,
   };
+}
+
+function mapScheduleAssignments(rows: ScheduleDashboardRow[]): DashboardScheduleAssignment[] {
+  return rows.map((row) => ({
+    id: row.id,
+    workspaceId: row.workspace_id,
+    taskId: row.task_id ?? undefined,
+    routeId: row.route_id ?? undefined,
+    routeLabel: row.route_label ?? undefined,
+    supportType: row.support_type,
+    requestStatus: row.request_status,
+    assigneeName: row.assignee_name ?? undefined,
+    scheduledFor: row.scheduled_for,
+    scheduleStatus: row.schedule_status,
+    rescheduledFrom: row.rescheduled_from ?? undefined,
+    notes: row.notes ?? undefined,
+    sessionId: row.session_id,
+  }));
 }
 
 function inventoryStatus(available: number, threshold: number): InventoryStatus {
