@@ -84,7 +84,17 @@ export function isTerminalStatus(status: RequestStatus): boolean {
 }
 
 export function requestRef(sessionId: string): string {
-  return `REQ-${sessionId.replace(/^req-/i, "")}`;
+  const id = sessionId.trim();
+  const requestMatch = id.match(/^req-(.+)$/i);
+  if (requestMatch) return `REQ-${requestMatch[1]}`;
+
+  const seedMatch = id.match(/^demo-seed-(\d+)$/i);
+  if (seedMatch) return `REQ-${String(900000 + Number(seedMatch[1])).padStart(6, "0")}`;
+
+  const curatedMatch = id.match(/^demo-account-(\d+)$/i);
+  if (curatedMatch) return `REQ-${String(800000 + Number(curatedMatch[1])).padStart(6, "0")}`;
+
+  return `REQ-${id.replace(/[^a-z0-9-]/gi, "").slice(0, 12).toUpperCase()}`;
 }
 
 // --- cost ------------------------------------------------------------------
@@ -244,6 +254,13 @@ export function taskStatus(task: RequestTaskSession): RequestStatus {
   return task.status;
 }
 
+export function taskDisplayStatus(task: RequestTaskSession): string {
+  const status = taskStatus(task);
+  if (isRouteBased(task)) return status;
+  if (status !== "In progress" || !task.scheduledFor) return status;
+  return task.scheduleStatus === "Rescheduled" ? "Rescheduled" : "Scheduled";
+}
+
 export function routeStatus(route: FulfilmentRoute): RequestStatus {
   return route.lifecycle ?? "Pending";
 }
@@ -251,7 +268,7 @@ export function routeStatus(route: FulfilmentRoute): RequestStatus {
 export const CHECKPOINT_LABELS: Record<FulfilmentCheckpointStage, string> = {
   accepted: "Accepted",
   meal_plan_confirmed: "Meal plan confirmed",
-  meal_preparing: "Preparing meals",
+  meal_preparing: "Added to MOW schedule",
   packing: "Packing",
   ready_for_pickup: "Ready for pickup",
   out_for_delivery: "Out for delivery",
@@ -268,7 +285,7 @@ export function routeCheckpointStages(
 ): FulfilmentCheckpointStage[] {
   if (!isCheckpointManagedRoute(task, route)) return [];
   if (task.supportType === "food" && route.label === "Cooked meals") {
-    return ["accepted", "meal_plan_confirmed", "meal_preparing", "out_for_delivery", "completed"];
+    return ["accepted", "meal_plan_confirmed", "meal_preparing"];
   }
   return ["accepted", "packing", routeHandoffStage(task), "completed"];
 }
@@ -313,6 +330,7 @@ export interface TaskStatusSummary {
   selectedSubtypes: string[];
   status: RequestStatus;
   rawStatus: RequestStatus;
+  displayStatus: string;
   isTerminal: boolean;
   rejectionReason?: string;
   scheduledFor?: string;
@@ -328,6 +346,15 @@ export interface RequestStatusSummary {
   tasks: TaskStatusSummary[];
 }
 
+export interface RequestRerouteHistory {
+  sessionId: string;
+  taskId: string;
+  fromOrgId: string;
+  toOrgId: string;
+  reason?: string;
+  reroutedAt: string;
+}
+
 export function taskStatusSummary(task: RequestTaskSession): TaskStatusSummary {
   const status = taskStatus(task);
   return {
@@ -336,6 +363,7 @@ export function taskStatusSummary(task: RequestTaskSession): TaskStatusSummary {
     selectedSubtypes: task.selectedSubtypes,
     status,
     rawStatus: task.status,
+    displayStatus: taskDisplayStatus(task),
     isTerminal: isTerminalStatus(status),
     rejectionReason: task.rejectionReason,
     scheduledFor: task.scheduledFor,

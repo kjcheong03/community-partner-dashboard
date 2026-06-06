@@ -304,6 +304,7 @@ export default function ScheduleBoard({
   items,
   onSelect,
   placement,
+  placementError,
   onPlaceTimeslot,
   onConfirmPlacement,
   onChooseAssignee,
@@ -313,6 +314,7 @@ export default function ScheduleBoard({
   items: ScheduleItem[];
   onSelect?: (id: string) => void;
   placement?: SchedulePlacement | null;
+  placementError?: string | null;
   onPlaceTimeslot?: (iso: string) => void;
   onConfirmPlacement?: () => void;
   onChooseAssignee?: () => void;
@@ -321,7 +323,8 @@ export default function ScheduleBoard({
 }) {
   const [mode, setMode] = useState<"time" | "assignee">("time");
   const [weekOffset, setWeekOffset] = useState(0);
-  const [todayKey] = useState(() => dateKey(Date.now()));
+  const [currentWeekAnchorMs] = useState(() => Date.now());
+  const [todayKey] = useState(() => dateKey(currentWeekAnchorMs));
   const [dragState, setDragState] = useState<DragState | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
@@ -339,7 +342,9 @@ export default function ScheduleBoard({
   const effectivePlacement = placement && dragState ? { ...placement, scheduledFor: dragState.candidateIso } : placement;
   const draft = effectivePlacement && placementItem ? placedFromPlacement(placementItem, effectivePlacement) : null;
   const draftValid = draft ? isPlacementValid(draft, placed) : true;
-  const anchorMs = draft?.ms ?? placed[0]?.ms ?? Date.UTC(2026, 5, 5);
+  const placementIssue = placement ? placementError ?? (draftValid ? null : "Timeslot overlaps another session") : null;
+  const canUseDraft = draftValid && !placementIssue;
+  const anchorMs = draft?.ms ?? currentWeekAnchorMs;
   const start = weekStart(anchorMs) + weekOffset * 7 * DAY_MS;
   const week = useMemo(() => Array.from({ length: 7 }, (_, i) => start + i * DAY_MS), [start]);
   const weekKeys = useMemo(() => new Set(week.map(dateKey)), [week]);
@@ -427,13 +432,19 @@ export default function ScheduleBoard({
         </div>
       </div>
 
+      {placementIssue ? (
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+          {placementIssue}
+        </div>
+      ) : null}
+
       {activeMode === "time" ? (
         <WeekGrid
           gridRef={gridRef}
           rows={rows}
           preferredZones={zones}
           draft={draft}
-          draftValid={draftValid}
+          draftValid={canUseDraft}
           week={week}
           todayKey={todayKey}
           onSelect={onSelect}

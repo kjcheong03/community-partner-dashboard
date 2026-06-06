@@ -282,7 +282,6 @@ export default function PreviewPage() {
           <ConfirmDialog
             open={confirmOpen}
             title="Reject this request?"
-            message="This moves the request to the Closed view with a rejection reason."
             confirmLabel="Reject"
             destructive
             onConfirm={() => { setConfirmResult("confirmed"); setConfirmOpen(false); }}

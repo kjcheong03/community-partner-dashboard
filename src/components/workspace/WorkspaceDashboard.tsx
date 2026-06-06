@@ -17,6 +17,7 @@ import { pickColumns } from "@/components/kit/columns";
 import { deriveUrgency } from "@/components/kit/format";
 import {
   checkpointLabel,
+  routeCheckpointStages,
   TRANSITIONS,
   flattenToWorkItems,
   rollupStatus,
@@ -82,9 +83,11 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
   const [sessions, setSessions] = useState<RequestSession[]>(() => initialSessions ?? generateSessions());
   const [scheduleAssignmentOverrides, setScheduleAssignmentOverrides] = useState<DashboardScheduleAssignment[] | null | undefined>(undefined);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedItemSnapshot, setSelectedItemSnapshot] = useState<WorkItem | null>(null);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null);
   const [placement, setPlacement] = useState<SchedulePlacement | null>(null);
   const [acceptPlacementItem, setAcceptPlacementItem] = useState<WorkItem | null>(null);
+  const [placementError, setPlacementError] = useState<string | null>(null);
   const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
   const [pendingRequestStatus, setPendingRequestStatus] = useState<PendingRequestStatusAction | null>(null);
   const [pendingScheduleStatus, setPendingScheduleStatus] = useState<PendingScheduleStatusAction | null>(null);
@@ -127,7 +130,8 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
   );
   const areaCounts = useMemo(() => countByArea(allItems).map((a) => ({ region: a.area, count: a.count })), [allItems]);
 
-  const selected = allItems.find((i) => i.id === selectedId) ?? null;
+  const selectedLiveItem = allItems.find((i) => i.id === selectedId) ?? null;
+  const selected = selectedLiveItem ?? (selectedItemSnapshot?.id === selectedId ? selectedItemSnapshot : null);
   const selectedSchedule = scheduledItems.find((i) => i.id === selectedScheduleId) ?? null;
 
   useEffect(() => {
@@ -141,6 +145,21 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
     startRefreshTransition(() => {
       router.refresh();
     });
+  }
+
+  function openRequestDetail(item: WorkItem) {
+    setSelectedId(item.id);
+    setSelectedItemSnapshot(item);
+  }
+
+  function closeRequestDetail() {
+    setSelectedId(null);
+    setSelectedItemSnapshot(null);
+  }
+
+  function closeAllDetails() {
+    closeRequestDetail();
+    setSelectedScheduleId(null);
   }
 
   function handleStatusChange(item: WorkItem, next: RequestStatus, reason?: string) {
@@ -174,12 +193,12 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
     });
 
     if (!result.ok) {
-      console.error("Failed to advance route checkpoint", result.error);
+      console.warn("Failed to advance route checkpoint", result.error);
       setActionBusy(false);
       return;
     }
     if (!result.checkpoint) {
-      console.error("Route checkpoint action completed without a checkpoint payload");
+      console.warn("Route checkpoint action completed without a checkpoint payload");
       setActionBusy(false);
       return;
     }
@@ -197,12 +216,13 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
   function beginAcceptPlacement(item: WorkItem) {
     const scheduledFor = firstAvailablePlacementIso(preferredSlotForWorkItem(item)?.iso ?? defaultPlacementIso(), scheduleItems);
     setAcceptPlacementItem(item);
+    setPlacementError(null);
     setPlacement({
       itemId: acceptPlacementId(item),
       scheduledFor,
     });
     setAssigneePickerOpen(false);
-    setSelectedId(null);
+    closeRequestDetail();
     setSelectedScheduleId(null);
     requestAnimationFrame(() => {
       scheduleSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -245,15 +265,20 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
     });
 
     if (!result.ok) {
-      console.error("Failed to update request status", result.error);
+      const error = result.error ?? "Unable to update request status";
+      if (scheduleDetails) {
+        setPlacementError(error);
+      } else {
+        console.warn("Failed to update request status", error);
+      }
       setActionBusy(false);
       return false;
     }
 
     if (result.rerouted) {
-      setSessions((prev) => applyTaskReroute(prev, pending.item, result.rerouted.toWorkspaceId, result.rerouted.fallbackOrgIds));
+      setSessions((prev) => applyTaskReroute(prev, pending.item, pending.reason));
       setPendingRequestStatus(null);
-      setSelectedId(null);
+      closeRequestDetail();
       setActionBusy(false);
       return true;
     }
@@ -276,7 +301,6 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
     if (result.scheduleAssignment) {
       const assignment = scheduleAssignmentFromMutation(pending.item, workspace, result.scheduleAssignment);
       updateLocalScheduleAssignments((prev) => upsertScheduleAssignment(prev, assignment));
-      setSelectedId(null);
       setSelectedScheduleId(null);
     }
 
@@ -296,7 +320,7 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
     });
 
     if (!result.ok) {
-      console.error("Failed to update inventory stock", result.error);
+      console.warn("Failed to update inventory stock", result.error);
       return;
     }
 
@@ -331,7 +355,7 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
     });
 
     if (!result.ok) {
-      console.error("Failed to update schedule assignment", result.error);
+      console.warn("Failed to update schedule assignment", result.error);
       setActionBusy(false);
       return;
     }
@@ -340,11 +364,11 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
     if (requestStatus) setSessions((prev) => applyStatus(prev, pending.item, requestStatus));
     setPendingScheduleStatus(null);
     setActionBusy(false);
-    router.refresh();
   }
 
   function handleEditTimeslot(item: ScheduledWorkItem) {
     if (!item.scheduleAssignment) return;
+    setPlacementError(null);
     setPlacement({
       itemId: item.id,
       scheduledFor: item.scheduleAssignment.scheduledFor,
@@ -354,6 +378,7 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
   }
 
   function handlePlaceTimeslot(iso: string) {
+    setPlacementError(null);
     setPlacement((current) => current ? { ...current, scheduledFor: iso } : current);
   }
 
@@ -361,9 +386,17 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
     if (!placement) return;
     const assignee = placement.assignee?.trim();
     if (!assignee) {
+      setPlacementError("Assignee is required");
       setAssigneePickerOpen(true);
       return;
     }
+
+    const validationError = validateSchedulePlacementClient(scheduleItems, placement, assignee);
+    if (validationError) {
+      setPlacementError(validationError);
+      return;
+    }
+    setPlacementError(null);
 
     if (acceptPlacementItem && placement.itemId === acceptPlacementId(acceptPlacementItem)) {
       const details = {
@@ -374,6 +407,7 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
       if (!ok) return;
       setAcceptPlacementItem(null);
       setPlacement(null);
+      setPlacementError(null);
       setAssigneePickerOpen(false);
       return;
     }
@@ -392,6 +426,7 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
       updateLocalScheduleAssignments((prev) => updateScheduleAssignmentDetails(prev, assignmentId, details));
       setSessions((prev) => applyScheduleDetails(prev, item, details, scheduledChangedStatus(item.scheduleAssignment?.scheduledFor, details.scheduledFor)));
       setPlacement(null);
+      setPlacementError(null);
       setAssigneePickerOpen(false);
       return;
     }
@@ -403,19 +438,21 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
     });
 
     if (!result.ok) {
-      console.error("Failed to update schedule assignment details", result.error);
+      setPlacementError(result.error ?? "Unable to update schedule assignment");
       return;
     }
 
     updateLocalScheduleAssignments((prev) => updateScheduleAssignmentDetails(prev, assignmentId, details));
     setSessions((prev) => applyScheduleDetails(prev, item, details, scheduledChangedStatus(item.scheduleAssignment?.scheduledFor, details.scheduledFor)));
     setPlacement(null);
+    setPlacementError(null);
     setAssigneePickerOpen(false);
   }
 
   function handleCancelPlacement() {
     setPlacement(null);
     setAcceptPlacementItem(null);
+    setPlacementError(null);
     setAssigneePickerOpen(false);
   }
 
@@ -461,7 +498,7 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
                     items={queueItems}
                     columns={WORKSPACE_COLUMNS}
                     selectedId={selectedId}
-                    onSelect={(it) => setSelectedId(it.id)}
+                    onSelect={openRequestDetail}
                     defaultSortKey="submitted"
                     defaultSortDir="desc"
                     showAllColumns
@@ -494,8 +531,7 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
                       height={360}
                       onRegionClick={(region) => {
                         setRegionFilter(region);
-                        setSelectedId(null);
-                        setSelectedScheduleId(null);
+                        closeAllDetails();
                       }}
                     />
                   ) : (
@@ -513,8 +549,9 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
                   <ScheduleBoard
                     items={scheduleItems}
                     placement={placement}
+                    placementError={placementError}
                     onSelect={(id) => {
-                      setSelectedId(null);
+                      closeRequestDetail();
                       setSelectedScheduleId(id);
                     }}
                     onPlaceTimeslot={handlePlaceTimeslot}
@@ -529,14 +566,14 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
         </main>
       </div>
 
-      <SlideOver open={!!selected} onClose={() => setSelectedId(null)}>
+      <SlideOver open={!!selected} onClose={closeRequestDetail}>
         {selected && (
           <RequestDetailPanel
             item={selected}
             onStatusChange={handleStatusChange}
             onCheckpointAdvance={handleAdvanceCheckpoint}
             actionBusy={actionBusy}
-            onClose={() => setSelectedId(null)}
+            onClose={closeRequestDetail}
           />
         )}
       </SlideOver>
@@ -555,7 +592,6 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
       <ConfirmDialog
         open={!!pendingRequestStatus}
         title={pendingRequestStatus ? `${requestActionLabel(pendingRequestStatus.next)} request?` : ""}
-        description={pendingRequestStatus ? requestActionDescription(pendingRequestStatus.next) : ""}
         confirmLabel={pendingRequestStatus ? requestActionLabel(pendingRequestStatus.next) : "Confirm"}
         destructive={pendingRequestStatus?.next === "Rejected" || pendingRequestStatus?.next === "Cancelled"}
         busy={actionBusy}
@@ -568,7 +604,6 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
       <ConfirmDialog
         open={!!pendingScheduleStatus}
         title={pendingScheduleStatus ? scheduleConfirmTitle(pendingScheduleStatus.next) : ""}
-        description=""
         confirmLabel={pendingScheduleStatus ? scheduleConfirmLabel(pendingScheduleStatus.next) : "Confirm"}
         destructive={pendingScheduleStatus?.next === "Cancelled"}
         busy={actionBusy}
@@ -585,6 +620,7 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
         scheduledFor={placement?.scheduledFor}
         onClose={() => setAssigneePickerOpen(false)}
         onSelect={(assignee) => {
+          setPlacementError(null);
           setPlacement((current) => current ? { ...current, assignee } : current);
           setAssigneePickerOpen(false);
         }}
@@ -889,6 +925,28 @@ function isCalendarSlotOpen(startMs: number, items: ScheduleItem[]): boolean {
     });
 }
 
+function validateSchedulePlacementClient(items: ScheduleItem[], placement: SchedulePlacement, assignee: string): string | null {
+  if (!assignee.trim()) return "Assignee is required";
+  const startMs = Date.parse(placement.scheduledFor);
+  if (Number.isNaN(startMs)) return "Scheduled time is invalid";
+  const endMs = startMs + scheduleDurationMinutes() * 60_000;
+  if (sgtDateKey(startMs) !== sgtDateKey(endMs - 1)) return "Scheduled time is outside working hours";
+  if (minutesSinceSgtDayStart(startMs) < 9 * 60 || minutesSinceSgtDayStart(endMs) > 18 * 60) {
+    return "Scheduled time is outside working hours";
+  }
+
+  const overlaps = items
+    .filter((item) => item.id !== placement.itemId)
+    .filter((item) => item.scheduleStatus !== "Cancelled")
+    .some((item) => {
+      const itemStart = Date.parse(item.when);
+      if (Number.isNaN(itemStart)) return false;
+      return intervalsOverlap(startMs, endMs, itemStart, itemStart + scheduleDurationMinutes(item) * 60_000);
+    });
+
+  return overlaps ? "Timeslot overlaps another session" : null;
+}
+
 function sgtDateKey(ms: number): string {
   const date = new Date(ms + 8 * 3_600_000);
   return `${date.getUTCFullYear()}-${date.getUTCMonth()}-${date.getUTCDate()}`;
@@ -993,14 +1051,6 @@ function requestActionLabel(status: RequestStatus): string {
     default:
       return status;
   }
-}
-
-function requestActionDescription(status: RequestStatus): string {
-  if (status === "Accepted") return "This accepts the request and creates a schedule slot to place on the calendar.";
-  if (status === "Rejected") return "This records the reason. If a fallback partner is available, the request is rerouted automatically.";
-  if (status === "Completed") return "This closes the request as completed.";
-  if (status === "Cancelled") return "This cancels the request.";
-  return "This updates the request status.";
 }
 
 function scheduleActionLabel(status: ScheduleStatus): string {
@@ -1363,8 +1413,7 @@ function applyScheduleDetails(
 function applyTaskReroute(
   sessions: RequestSession[],
   item: WorkItem,
-  nextPrimaryOrgId: string,
-  fallbackOrgIds: string[],
+  reason?: string,
 ): RequestSession[] {
   return sessions.map((s) => {
     if (s.id !== item.sessionId) return s;
@@ -1372,15 +1421,15 @@ function applyTaskReroute(
       t.supportType === item.supportType
         ? {
             ...t,
-            status: "Pending" as RequestStatus,
-            primaryOrganisationId: nextPrimaryOrgId,
-            fallbackOrganisationIds: fallbackOrgIds,
+            status: "Rejected" as RequestStatus,
+            primaryOrganisationId: item.ownerOrgId ?? t.primaryOrganisationId,
+            fallbackOrganisationIds: [],
             assignedTo: undefined,
             scheduledFor: undefined,
             scheduleStatus: undefined,
             rescheduledFrom: undefined,
             partnerNotes: undefined,
-            rejectionReason: undefined,
+            rejectionReason: reason,
           }
         : t
     );
@@ -1401,7 +1450,7 @@ function applyRouteCheckpoint(
 ): RequestSession[] {
   if (!item.route) return sessions;
   const label = checkpointLabel(stage);
-  const nextStatus = requestStatusForCheckpointStage(stage);
+  const nextStatus = requestStatusForCheckpointStage(stage, item.task, item.route);
 
   return sessions.map((s) => {
     if (s.id !== item.sessionId) return s;
@@ -1428,16 +1477,19 @@ function applyRouteCheckpoint(
   });
 }
 
-function requestStatusForCheckpointStage(stage: FulfilmentCheckpointStage): RequestStatus {
+function requestStatusForCheckpointStage(
+  stage: FulfilmentCheckpointStage,
+  task: WorkItem["task"],
+  route: NonNullable<WorkItem["route"]>,
+): RequestStatus {
   if (stage === "accepted") return "Accepted";
-  if (stage === "completed") return "Completed";
-  return "In progress";
+  const stages = routeCheckpointStages(task, route);
+  return stage === stages[stages.length - 1] ? "Completed" : "In progress";
 }
 
 function ConfirmDialog({
   open,
   title,
-  description,
   confirmLabel,
   destructive,
   busy,
@@ -1446,7 +1498,6 @@ function ConfirmDialog({
 }: {
   open: boolean;
   title: string;
-  description: string;
   confirmLabel: string;
   destructive?: boolean;
   busy?: boolean;
@@ -1461,7 +1512,6 @@ function ConfirmDialog({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-[15.5px] font-semibold text-slate-800">{title}</h2>
-            {description && <p className="mt-1 text-[15.5px] leading-relaxed text-slate-500">{description}</p>}
             <p className="mt-2 text-[13px] font-medium text-slate-400">This action cannot be undone.</p>
           </div>
           <button

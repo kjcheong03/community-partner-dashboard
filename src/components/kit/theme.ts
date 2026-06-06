@@ -28,6 +28,7 @@ export const STATUS_STYLES: Record<string, ChipStyle> = {
   Accepted: { pill: "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200", dot: "bg-indigo-500" },
   "In progress": { pill: "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200", dot: "bg-amber-500" },
   "Meal plan confirmed": { pill: "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200", dot: "bg-indigo-500" },
+  "Added to MOW schedule": { pill: "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200", dot: "bg-amber-500" },
   "Preparing meals": { pill: "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200", dot: "bg-amber-500" },
   Packing: { pill: "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200", dot: "bg-amber-500" },
   "Ready for pickup": { pill: "bg-cyan-50 text-cyan-700 ring-1 ring-inset ring-cyan-200", dot: "bg-cyan-500" },

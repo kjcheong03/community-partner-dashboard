@@ -73,13 +73,15 @@ export default function AnalyticsPanel({ items, className }: { items: WorkItem[]
 
   const buckets = useMemo(() => {
     const n = Math.round((end - start) / DAY);
-    const arr: { ms: number; value: number }[] = [];
+    const arr: { ms: number; value: number; future: boolean }[] = [];
     for (let i = 0; i < n; i++) {
       const ms = start + i * DAY;
-      if (ms > anchorMs) break; // don't plot days that haven't passed yet
-      arr.push({ ms, value: 0 });
+      arr.push({ ms, value: 0, future: ms > anchorMs });
     }
-    for (const t of times) if (t >= start && t < end) { const i = Math.floor((t - start) / DAY); if (arr[i]) arr[i].value += 1; }
+    for (const t of times) if (t >= start && t < end) {
+      const i = Math.floor((t - start) / DAY);
+      if (arr[i] && !arr[i].future) arr[i].value += 1;
+    }
     return arr;
   }, [times, start, end, anchorMs]);
 
@@ -153,7 +155,7 @@ function niceTicks(max: number): number[] {
   return out;
 }
 
-function VolumeLine({ buckets, period, sig }: { buckets: { ms: number; value: number }[]; period: "week" | "month"; sig: string }) {
+function VolumeLine({ buckets, period, sig }: { buckets: { ms: number; value: number; future: boolean }[]; period: "week" | "month"; sig: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(0);
   const [sel, setSel] = useState<number | null>(null);
@@ -171,19 +173,27 @@ function VolumeLine({ buckets, period, sig }: { buckets: { ms: number; value: nu
   const H = 140, padL = 22, padR = 10, padT = 12, padB = 20;
   const plotW = Math.max(0, w - padL - padR);
   const plotH = H - padT - padB;
-  const max = Math.max(1, ...buckets.map((b) => b.value));
+  const plottedBuckets = buckets.filter((bucket) => !bucket.future);
+  const max = Math.max(1, ...plottedBuckets.map((b) => b.value));
   const ticks = niceTicks(max);
   const top = ticks[ticks.length - 1];
-  const n = buckets.length;
-  const x = (i: number) => padL + (n <= 1 ? plotW / 2 : (i * plotW) / (n - 1));
+  const xMax = Math.max(1, buckets.length - 1);
+  const x = (i: number) => padL + (buckets.length <= 1 ? plotW / 2 : (i * plotW) / xMax);
   const y = (v: number) => padT + plotH - (v / top) * plotH;
   const xLabel = (ms: number, i: number) =>
     period === "week"
-      ? new Date(ms).toLocaleDateString("en-SG", { weekday: "narrow" })
+      ? new Date(ms).toLocaleDateString("en-SG", { weekday: "short" })
       : i % 5 === 0 ? new Date(ms).toLocaleDateString("en-SG", { day: "numeric" }) : "";
 
-  const line = buckets.map((b, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(b.value).toFixed(1)}`).join(" ");
-  const area = w > 0 ? `${line} L${x(n - 1).toFixed(1)},${y(0)} L${x(0).toFixed(1)},${y(0)} Z` : "";
+  const line = plottedBuckets.map((b) => {
+    const i = buckets.indexOf(b);
+    return `${i === buckets.indexOf(plottedBuckets[0]) ? "M" : "L"}${x(i).toFixed(1)},${y(b.value).toFixed(1)}`;
+  }).join(" ");
+  const firstPlottedIndex = plottedBuckets.length ? buckets.indexOf(plottedBuckets[0]) : 0;
+  const lastPlottedIndex = plottedBuckets.length ? buckets.indexOf(plottedBuckets[plottedBuckets.length - 1]) : 0;
+  const area = w > 0 && plottedBuckets.length
+    ? `${line} L${x(lastPlottedIndex).toFixed(1)},${y(0)} L${x(firstPlottedIndex).toFixed(1)},${y(0)} Z`
+    : "";
   const clipId = `volume-wipe-${sig.replace(/[^a-z0-9_-]/gi, "-")}`;
 
   return (
@@ -203,10 +213,10 @@ function VolumeLine({ buckets, period, sig }: { buckets: { ms: number; value: nu
             </g>
           ))}
           <g clipPath={`url(#${clipId})`}>
-            <path d={area} fill="#3b82f6" fillOpacity={0.08} />
-            <path d={line} fill="none" stroke="#3b82f6" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+            {area ? <path d={area} fill="#3b82f6" fillOpacity={0.08} /> : null}
+            {line ? <path d={line} fill="none" stroke="#3b82f6" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" /> : null}
             {/* true circles (1:1 px space), clickable */}
-            {buckets.map((b, i) => (
+            {buckets.map((b, i) => !b.future && (
               <circle
                 key={b.ms}
                 cx={x(i)}

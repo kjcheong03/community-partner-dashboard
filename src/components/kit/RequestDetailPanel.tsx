@@ -9,12 +9,16 @@ import {
   routeCheckpointStages,
   routeDisplayStatus,
   routeStatus,
+  requestRef,
   supportTypeLabels,
+  taskDisplayStatus,
 } from "@/lib/contract";
 import { URGENCY_STYLES } from "./theme";
 import { costForItem, deriveUrgency, detailRows, formatSubmitted, neededByLabel } from "./format";
 import StatusBadge from "./StatusBadge";
 import StatusActionBar from "./StatusActionBar";
+
+const shortRequestRef = (sessionId: string) => requestRef(sessionId).replace(/^REQ-/, "#");
 
 type Props = {
   item: WorkItem;
@@ -32,7 +36,7 @@ export default function RequestDetailPanel({ item, onStatusChange, onCheckpointA
   const caregiverEstimate = caregiverEstimateText(cost);
   const rows = detailRows(task, route?.label);
   const neededBy = neededByLabel(task, session.createdAt);
-  const displayStatus = route ? routeDisplayStatus(task, route) : item.status;
+  const displayStatus = route ? routeDisplayStatus(task, route) : taskDisplayStatus(task);
   const checkpointStages = route ? routeCheckpointStages(task, route) : [];
   const nextCheckpoint = route ? nextRouteCheckpointStage(task, route) : null;
   const usesCheckpoints = Boolean(route && checkpointStages.length);
@@ -44,7 +48,7 @@ export default function RequestDetailPanel({ item, onStatusChange, onCheckpointA
       <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs text-slate-400">{session.id.replace("req-", "#")}</span>
+            <span className="font-mono text-xs text-slate-400">{shortRequestRef(session.id)}</span>
             <StatusBadge status={displayStatus} />
             <span className={cn("inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium", URGENCY_STYLES[urgency].pill)}>
               <span className={cn("h-1.5 w-1.5 rounded-full", URGENCY_STYLES[urgency].dot)} /> {urgency}
@@ -128,13 +132,12 @@ export default function RequestDetailPanel({ item, onStatusChange, onCheckpointA
 
 function ScheduleFlowTimeline({ item }: { item: WorkItem }) {
   const scheduledFor = item.task.scheduledFor;
-  const assignedTo = item.task.assignedTo;
   const scheduleStatus = item.task.scheduleStatus;
   const hasSchedule = Boolean(scheduledFor) || item.status === "In progress" || item.status === "Completed" || item.status === "Cancelled";
   const finalStatus = item.status === "Rejected" || item.status === "Cancelled" ? item.status : "Completed";
   const finalComplete = item.status === "Completed" || item.status === "Cancelled" || item.status === "Rejected";
   const scheduledLabel = scheduledFor
-    ? `${scheduleStatus === "Rescheduled" ? "Rescheduled" : "Scheduled"} for ${formatWorkflowTime(scheduledFor)}${assignedTo ? ` with ${assignedTo}` : ""}`
+    ? `${scheduleStatus === "Rescheduled" ? "Rescheduled" : "Scheduled"} for ${formatWorkflowTime(scheduledFor)}`
     : "Scheduled";
   const steps = [
     {
@@ -272,18 +275,19 @@ function CheckpointAction({
       onClick={() => onAdvance?.(item, nextStage)}
       className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60"
     >
-      {busy ? "Working..." : checkpointActionLabel(nextStage)}
+      {busy ? "Working..." : checkpointActionLabel(nextStage, item)}
     </button>
   );
 }
 
-function checkpointActionLabel(stage: FulfilmentCheckpointStage): string {
+function checkpointActionLabel(stage: FulfilmentCheckpointStage, item: WorkItem): string {
   if (stage === "accepted") return "Accept";
   if (stage === "meal_plan_confirmed") return "Confirm meal plan";
-  if (stage === "meal_preparing") return "Start meal prep";
+  if (stage === "meal_preparing") return "Add to MOW schedule";
   if (stage === "packing") return "Start packing";
   if (stage === "ready_for_pickup") return "Ready for pickup";
   if (stage === "out_for_delivery") return "Out for delivery";
+  if (stage === "completed" && item.route?.label === "Cooked meals") return "Complete service";
   if (stage === "completed") return "Complete";
   return checkpointLabel(stage);
 }

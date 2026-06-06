@@ -3,10 +3,12 @@
 import { Ban, CalendarClock, CheckCircle2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WorkItem } from "@/lib/contract";
-import { supportTypeLabels } from "@/lib/contract";
+import { requestRef, supportTypeLabels } from "@/lib/contract";
 import type { DashboardScheduleAssignment, ScheduleStatus } from "@/lib/schedule";
 import { detailRows, formatSubmitted, neededByLabel } from "./format";
 import StatusBadge from "./StatusBadge";
+
+const shortRequestRef = (sessionId: string) => requestRef(sessionId).replace(/^REQ-/, "#");
 
 type ScheduledWorkItem = WorkItem & {
   scheduleAssignment?: DashboardScheduleAssignment;
@@ -38,7 +40,7 @@ export default function ScheduleDetailPanel({ item, onScheduleStatusChange, onEd
       <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs text-slate-400">{session.id.replace("req-", "#")}</span>
+            <span className="font-mono text-xs text-slate-400">{shortRequestRef(session.id)}</span>
             <StatusBadge status={scheduleState} />
           </div>
           <h3 className="mt-1.5 font-semibold text-slate-800">{title}</h3>

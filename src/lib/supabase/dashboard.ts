@@ -39,7 +39,7 @@ type RouteCheckpointRow = {
 
 type WorkspaceWorkItemRow = {
   workspace_id: string;
-  relation: "primary" | "backup" | "owner";
+  relation: "primary" | "backup" | "owner" | "rejected";
   item_kind: "partner-task" | "food-route" | "supplies-route";
   session_id: string;
   task_id: string;
@@ -347,7 +347,7 @@ function mapWorkspaceWorkItemTask(row: WorkspaceWorkItemRow, schedule: ScheduleD
     supportType: row.support_type,
     selectedSubtypes: row.selected_subtypes ?? [],
     details: row.details ?? {},
-    primaryOrganisationId: row.relation === "primary" ? row.workspace_id : "",
+    primaryOrganisationId: row.relation === "primary" || row.relation === "rejected" ? row.workspace_id : "",
     fallbackOrganisationIds: row.relation === "backup" ? [row.workspace_id] : [],
     fulfilmentRoutes: [],
     costEstimate: row.cost_estimate ?? undefined,

@@ -119,15 +119,18 @@ export async function advanceRouteCheckpointAction(target: RouteCheckpointTarget
     .single<{ support_type: SupportTypeId; details: Record<string, unknown> | null }>();
   if (taskError) return { ok: false, error: taskError.message };
 
+  const routeCheckpointInput = { supportType: task.support_type, details: task.details ?? {} };
+  const routeStageInput = { label: route.label };
+  const stages = routeCheckpointStages(routeCheckpointInput, routeStageInput);
   const checkpoints = await readRouteCheckpoints(supabase, target.routeId);
   const expected = nextRouteCheckpointStage(
-    { supportType: task.support_type, details: task.details ?? {} },
-    { label: route.label, checkpoints },
+    routeCheckpointInput,
+    { ...routeStageInput, checkpoints },
   );
   if (!expected) return { ok: false, error: "This route does not use route checkpoints or is already complete" };
   if (target.stage !== expected) return { ok: false, error: `Next checkpoint must be ${checkpointLabel(expected)}` };
 
-  const nextStatus = requestStatusForCheckpoint(target.stage);
+  const nextStatus = requestStatusForCheckpoint(target.stage, stages);
   const fromStatus = route.lifecycle ?? "Pending";
   if (nextStatus !== fromStatus) {
     const scope = route.route_type === "partner_service" ? "full" : "reduced";
@@ -136,10 +139,7 @@ export async function advanceRouteCheckpointAction(target: RouteCheckpointTarget
   }
 
   const completedAt = new Date().toISOString();
-  const stepOrder = routeCheckpointStages(
-    { supportType: task.support_type, details: task.details ?? {} },
-    { label: route.label },
-  ).indexOf(target.stage) + 1;
+  const stepOrder = stages.indexOf(target.stage) + 1;
   const { data: inserted, error: insertError } = await supabase
     .from("request_route_checkpoints")
     .insert({
@@ -440,15 +440,9 @@ async function readRouteCheckpoints(supabase: SupabaseServerClient, routeId: str
   }));
 }
 
-function requestStatusForCheckpoint(stage: FulfilmentCheckpointStage): RequestStatus {
-  switch (stage) {
-    case "accepted":
-      return "Accepted";
-    case "completed":
-      return "Completed";
-    default:
-      return "In progress";
-  }
+function requestStatusForCheckpoint(stage: FulfilmentCheckpointStage, stages: FulfilmentCheckpointStage[]): RequestStatus {
+  if (stage === "accepted") return "Accepted";
+  return stage === stages[stages.length - 1] ? "Completed" : "In progress";
 }
 
 function parseScheduleDetails(details?: ScheduleAssignmentDetailsInput): ScheduleAssignmentDetailsInput | null {
