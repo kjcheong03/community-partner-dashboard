@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, CalendarClock, CheckCircle2, PlayCircle, X } from "lucide-react";
+import { Ban, CalendarClock, CheckCircle2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WorkItem } from "@/lib/contract";
 import { supportTypeLabels } from "@/lib/contract";
@@ -15,11 +15,12 @@ type ScheduledWorkItem = WorkItem & {
 type Props = {
   item: ScheduledWorkItem;
   onScheduleStatusChange?: (item: ScheduledWorkItem, next: ScheduleStatus) => void;
+  onEditTimeslot?: (item: ScheduledWorkItem) => void;
   onClose?: () => void;
   className?: string;
 };
 
-export default function ScheduleDetailPanel({ item, onScheduleStatusChange, onClose, className }: Props) {
+export default function ScheduleDetailPanel({ item, onScheduleStatusChange, onEditTimeslot, onClose, className }: Props) {
   const { task, session, route } = item;
   const title = route ? route.label : supportTypeLabels[item.supportType];
   const scheduledFor = typeof task.scheduledFor === "string" ? task.scheduledFor : "";
@@ -28,6 +29,9 @@ export default function ScheduleDetailPanel({ item, onScheduleStatusChange, onCl
   const rows = detailRows(task, route?.label);
   const dispatchRows = dispatchRowsForItem(item, scheduledFor, assignee);
   const scheduleTransitions = item.scheduleAssignment ? scheduleStatusTransitions(scheduleState) : [];
+  const canEditTimeslot = Boolean(item.scheduleAssignment && scheduleState !== "Completed" && scheduleState !== "Cancelled");
+  const canComplete = scheduleTransitions.includes("Completed");
+  const canCancel = scheduleTransitions.includes("Cancelled");
 
   return (
     <div className={cn("ops-card flex h-full min-h-0 flex-col", className)}>
@@ -84,28 +88,37 @@ export default function ScheduleDetailPanel({ item, onScheduleStatusChange, onCl
       </div>
 
       <div className="border-t border-slate-200 px-5 py-4">
-        {scheduleTransitions.length === 0 ? (
+        {!canComplete && !canEditTimeslot && !canCancel ? (
           <p className="text-xs text-slate-400">No further schedule actions are available.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {scheduleTransitions.map((next) => (
+            {canComplete && (
               <button
-                key={next}
                 type="button"
-                onClick={() => onScheduleStatusChange?.(item, next)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                  next === "Cancelled"
-                    ? "border border-slate-200 text-slate-600 hover:bg-slate-50"
-                    : "bg-slate-900 text-white hover:bg-slate-800"
-                )}
+                onClick={() => onScheduleStatusChange?.(item, "Completed")}
+                className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-800"
               >
-                {next === "In progress" && <PlayCircle size={13} />}
-                {next === "Completed" && <CheckCircle2 size={13} />}
-                {next === "Cancelled" && <Ban size={13} />}
-                {scheduleActionLabel(next)}
+                <CheckCircle2 size={13} /> Complete
               </button>
-            ))}
+            )}
+            {canEditTimeslot && (
+              <button
+                type="button"
+                onClick={() => onEditTimeslot?.(item)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+              >
+                <CalendarClock size={13} /> Edit timeslot
+              </button>
+            )}
+            {canCancel && (
+              <button
+                type="button"
+                onClick={() => onScheduleStatusChange?.(item, "Cancelled")}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+              >
+                <Ban size={13} /> Cancel
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -117,24 +130,11 @@ function scheduleStatusTransitions(status: ScheduleStatus): ScheduleStatus[] {
   switch (status) {
     case "Scheduled":
     case "Rescheduled":
-      return ["In progress", "Completed", "Cancelled"];
+      return ["Completed", "Cancelled"];
     case "In progress":
       return ["Completed", "Cancelled"];
     default:
       return [];
-  }
-}
-
-function scheduleActionLabel(status: ScheduleStatus): string {
-  switch (status) {
-    case "In progress":
-      return "Start visit";
-    case "Completed":
-      return "Complete";
-    case "Cancelled":
-      return "Cancel";
-    default:
-      return status;
   }
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { RefreshCw, X } from "lucide-react";
@@ -10,25 +10,34 @@ import RequestDetailPanel from "@/components/kit/RequestDetailPanel";
 import SlideOver from "@/components/kit/SlideOver";
 import AnalyticsPanel from "@/components/kit/AnalyticsPanel";
 import OrgLogo from "@/components/kit/OrgLogo";
-import ScheduleBoard, { type ScheduleItem } from "@/components/kit/ScheduleBoard";
+import ScheduleBoard, { type PreferredScheduleSlot, type ScheduleItem, type SchedulePlacement } from "@/components/kit/ScheduleBoard";
 import ScheduleDetailPanel from "@/components/kit/ScheduleDetailPanel";
 import InventoryTable, { type InventoryRow, type InventoryStatus } from "@/components/kit/InventoryTable";
 import { pickColumns } from "@/components/kit/columns";
 import { deriveUrgency } from "@/components/kit/format";
 import {
+  checkpointLabel,
   TRANSITIONS,
   flattenToWorkItems,
   rollupStatus,
   supportTypeLabels,
   taskStatus,
+  type FulfilmentCheckpointStage,
   type RequestSession,
   type RequestStatus,
   type WorkItem,
 } from "@/lib/contract";
 import { countByArea, generateSessions } from "@/lib/mock";
-import type { DashboardScheduleAssignment, ScheduleStatus } from "@/lib/schedule";
-import type { WorkspaceConfig } from "@/lib/workspaces";
-import { updateInventoryStockAction, updateScheduleAssignmentStatusAction, updateWorkItemStatusAction } from "@/app/actions";
+import type { DashboardScheduleAssignment, ScheduleAssignmentMutationResult, ScheduleStatus } from "@/lib/schedule";
+import { cn } from "@/lib/utils";
+import { assigneesForWorkspace, type WorkspaceConfig } from "@/lib/workspaces";
+import {
+  advanceRouteCheckpointAction,
+  updateInventoryStockAction,
+  updateScheduleAssignmentDetailsAction,
+  updateScheduleAssignmentStatusAction,
+  updateWorkItemStatusAction,
+} from "@/app/actions";
 
 const MapHeatmap = dynamic(() => import("@/components/kit/MapHeatmap"), { ssr: false });
 
@@ -54,24 +63,58 @@ type ScheduledWorkItem = WorkItem & {
   scheduleAssignment?: DashboardScheduleAssignment;
 };
 
+type PendingRequestStatusAction = {
+  item: WorkItem;
+  next: RequestStatus;
+  reason?: string;
+};
+
+type PendingScheduleStatusAction = {
+  item: ScheduledWorkItem;
+  next: ScheduleStatus;
+};
+
 export default function WorkspaceDashboard({ workspace, initialSessions, initialInventoryRows, initialScheduleAssignments }: Props) {
   const router = useRouter();
   const liveData = initialSessions !== undefined;
   const [isRefreshing, startRefreshTransition] = useTransition();
+  const scheduleSectionRef = useRef<HTMLDivElement | null>(null);
   const [sessions, setSessions] = useState<RequestSession[]>(() => initialSessions ?? generateSessions());
+  const [scheduleAssignmentOverrides, setScheduleAssignmentOverrides] = useState<DashboardScheduleAssignment[] | null | undefined>(undefined);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null);
+  const [placement, setPlacement] = useState<SchedulePlacement | null>(null);
+  const [acceptPlacementItem, setAcceptPlacementItem] = useState<WorkItem | null>(null);
+  const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
+  const [pendingRequestStatus, setPendingRequestStatus] = useState<PendingRequestStatusAction | null>(null);
+  const [pendingScheduleStatus, setPendingScheduleStatus] = useState<PendingScheduleStatusAction | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
   const [geojson, setGeojson] = useState<FeatureCollection | null>(null);
   const [regionFilter, setRegionFilter] = useState<string | null>(null);
+  const scheduleAssignments = scheduleAssignmentOverrides ?? initialScheduleAssignments;
 
   const allItems = useMemo(() => itemsForWorkspace(sessions, workspace), [sessions, workspace]);
-  const scheduledItems = useMemo(
-    () => initialScheduleAssignments !== undefined
-      ? scheduledWorkItemsFromAssignments(allItems, initialScheduleAssignments ?? [])
+  const scheduledItems = useMemo<ScheduledWorkItem[]>(
+    () => scheduleAssignments !== undefined
+      ? scheduledWorkItemsFromAssignments(allItems, scheduleAssignments ?? [])
       : scheduledWorkItemsForWorkspace(allItems, workspace),
-    [allItems, initialScheduleAssignments, workspace]
+    [allItems, scheduleAssignments, workspace]
   );
-  const scheduleItems = useMemo(() => scheduleItemsFromWorkItems(scheduledItems), [scheduledItems]);
+  const baseScheduleItems = useMemo(() => scheduleItemsFromWorkItems(scheduledItems), [scheduledItems]);
+  const acceptDraftScheduleItem = useMemo(
+    () => acceptPlacementItem && placement?.itemId === acceptPlacementId(acceptPlacementItem)
+      ? scheduleItemFromAcceptPlacement(acceptPlacementItem, placement)
+      : null,
+    [acceptPlacementItem, placement]
+  );
+  const scheduleItems = useMemo(
+    () => acceptDraftScheduleItem ? [...baseScheduleItems, acceptDraftScheduleItem] : baseScheduleItems,
+    [acceptDraftScheduleItem, baseScheduleItems]
+  );
+  const availableAssignees = useMemo(
+    () => placement ? availableAssigneesForSlot(workspace, scheduleItems, placement) : [],
+    [placement, scheduleItems, workspace]
+  );
   const inventory = useMemo(
     () => initialInventoryRows !== undefined
       ? { rows: initialInventoryRows ?? [], locationHeader: inventoryLocationHeader(workspace) }
@@ -100,24 +143,146 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
     });
   }
 
-  async function handleStatusChange(item: WorkItem, next: RequestStatus, reason?: string) {
-    setSessions((prev) => applyStatus(prev, item, next, reason));
-    if (!liveData) return;
+  function handleStatusChange(item: WorkItem, next: RequestStatus, reason?: string) {
+    if (next === "Accepted") {
+      if (workspace.scheduleKind) {
+        beginAcceptPlacement(item);
+        return;
+      }
+      void commitRequestStatusChange({ item, next, reason });
+      return;
+    }
+
+    setPendingRequestStatus({ item, next, reason });
+  }
+
+  async function handleAdvanceCheckpoint(item: WorkItem, stage: FulfilmentCheckpointStage) {
+    const routeId = workItemRouteDbId(item);
+    if (!item.route || !routeId) return;
+    setActionBusy(true);
+
+    if (!liveData) {
+      setSessions((prev) => applyRouteCheckpoint(prev, item, stage, new Date().toISOString(), workspace.shortName));
+      setActionBusy(false);
+      return;
+    }
+
+    const result = await advanceRouteCheckpointAction({
+      workspaceSlug: workspace.slug,
+      routeId,
+      stage,
+    });
+
+    if (!result.ok) {
+      console.error("Failed to advance route checkpoint", result.error);
+      setActionBusy(false);
+      return;
+    }
+    if (!result.checkpoint) {
+      console.error("Route checkpoint action completed without a checkpoint payload");
+      setActionBusy(false);
+      return;
+    }
+
+    setSessions((prev) => applyRouteCheckpoint(
+      prev,
+      item,
+      result.checkpoint.stage,
+      result.checkpoint.completedAt,
+      result.checkpoint.actorName
+    ));
+    setActionBusy(false);
+  }
+
+  function beginAcceptPlacement(item: WorkItem) {
+    const scheduledFor = firstAvailablePlacementIso(preferredSlotForWorkItem(item)?.iso ?? defaultPlacementIso(), scheduleItems);
+    setAcceptPlacementItem(item);
+    setPlacement({
+      itemId: acceptPlacementId(item),
+      scheduledFor,
+    });
+    setAssigneePickerOpen(false);
+    setSelectedId(null);
+    setSelectedScheduleId(null);
+    requestAnimationFrame(() => {
+      scheduleSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  function updateLocalScheduleAssignments(
+    updater: (assignments: DashboardScheduleAssignment[] | null | undefined) => DashboardScheduleAssignment[] | null | undefined
+  ) {
+    setScheduleAssignmentOverrides((current) => updater(current ?? initialScheduleAssignments));
+  }
+
+  async function confirmRequestStatusChange() {
+    const pending = pendingRequestStatus;
+    if (!pending) return;
+    await commitRequestStatusChange(pending);
+  }
+
+  async function commitRequestStatusChange(
+    pending: PendingRequestStatusAction,
+    scheduleDetails?: { assigneeName?: string; scheduledFor: string; notes?: string }
+  ): Promise<boolean> {
+    setActionBusy(true);
+
+    if (!liveData) {
+      const displayStatus = pending.next === "Accepted" && workspace.scheduleKind ? "In progress" : pending.next;
+      setSessions((prev) => applyStatus(prev, pending.item, displayStatus, pending.reason, scheduleDetails));
+      setPendingRequestStatus(null);
+      setActionBusy(false);
+      return true;
+    }
 
     const result = await updateWorkItemStatusAction({
       workspaceSlug: workspace.slug,
-      taskId: item.route ? null : workItemTaskDbId(item),
-      routeId: item.route ? workItemRouteDbId(item) : null,
-      next,
-      reason,
+      taskId: pending.item.route ? null : workItemTaskDbId(pending.item),
+      routeId: pending.item.route ? workItemRouteDbId(pending.item) : null,
+      next: pending.next,
+      reason: pending.reason,
+      scheduleDetails,
     });
 
     if (!result.ok) {
       console.error("Failed to update request status", result.error);
-      return;
+      setActionBusy(false);
+      return false;
     }
 
-    router.refresh();
+    if (result.rerouted) {
+      setSessions((prev) => applyTaskReroute(prev, pending.item, result.rerouted.toWorkspaceId, result.rerouted.fallbackOrgIds));
+      setPendingRequestStatus(null);
+      setSelectedId(null);
+      setActionBusy(false);
+      return true;
+    }
+
+    const displayStatus = pending.next === "Accepted" && result.scheduleAssignment ? "In progress" : pending.next;
+    setSessions((prev) => applyStatus(
+      prev,
+      pending.item,
+      displayStatus,
+      pending.reason,
+      result.scheduleAssignment
+        ? {
+            assigneeName: result.scheduleAssignment.assigneeName,
+            scheduledFor: result.scheduleAssignment.scheduledFor,
+            notes: result.scheduleAssignment.notes,
+          }
+        : scheduleDetails
+    ));
+
+    if (result.scheduleAssignment) {
+      const assignment = scheduleAssignmentFromMutation(pending.item, workspace, result.scheduleAssignment);
+      updateLocalScheduleAssignments((prev) => upsertScheduleAssignment(prev, assignment));
+      setSelectedId(null);
+      setSelectedScheduleId(null);
+    }
+
+    setPendingRequestStatus(null);
+    setActionBusy(false);
+    return true;
   }
 
   async function handleSaveStock(row: InventoryRow, available: number, topUp: number) {
@@ -138,22 +303,120 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
     router.refresh();
   }
 
-  async function handleScheduleStatusChange(item: ScheduledWorkItem, next: ScheduleStatus) {
-    const assignmentId = item.scheduleAssignment?.id;
-    if (!liveData || !assignmentId) return;
+  function handleScheduleStatusChange(item: ScheduledWorkItem, next: ScheduleStatus) {
+    setPendingScheduleStatus({ item, next });
+  }
+
+  async function confirmScheduleStatusChange() {
+    const pending = pendingScheduleStatus;
+    if (!pending) return;
+    const assignmentId = pending.item.scheduleAssignment?.id;
+    if (!assignmentId) return;
+
+    setActionBusy(true);
+    const requestStatus = requestStatusFromScheduleStatus(pending.next);
+
+    if (!liveData) {
+      updateLocalScheduleAssignments((prev) => updateScheduleAssignmentStatus(prev, assignmentId, pending.next));
+      if (requestStatus) setSessions((prev) => applyStatus(prev, pending.item, requestStatus));
+      setPendingScheduleStatus(null);
+      setActionBusy(false);
+      return;
+    }
 
     const result = await updateScheduleAssignmentStatusAction({
       workspaceSlug: workspace.slug,
       scheduleAssignmentId: assignmentId,
-      next,
+      next: pending.next,
     });
 
     if (!result.ok) {
       console.error("Failed to update schedule assignment", result.error);
+      setActionBusy(false);
       return;
     }
 
+    updateLocalScheduleAssignments((prev) => updateScheduleAssignmentStatus(prev, assignmentId, pending.next));
+    if (requestStatus) setSessions((prev) => applyStatus(prev, pending.item, requestStatus));
+    setPendingScheduleStatus(null);
+    setActionBusy(false);
     router.refresh();
+  }
+
+  function handleEditTimeslot(item: ScheduledWorkItem) {
+    if (!item.scheduleAssignment) return;
+    setPlacement({
+      itemId: item.id,
+      scheduledFor: item.scheduleAssignment.scheduledFor,
+      assignee: item.scheduleAssignment.assigneeName,
+    });
+    setSelectedScheduleId(null);
+  }
+
+  function handlePlaceTimeslot(iso: string) {
+    setPlacement((current) => current ? { ...current, scheduledFor: iso } : current);
+  }
+
+  async function handleConfirmPlacement() {
+    if (!placement) return;
+    const assignee = placement.assignee?.trim();
+    if (!assignee) {
+      setAssigneePickerOpen(true);
+      return;
+    }
+
+    if (acceptPlacementItem && placement.itemId === acceptPlacementId(acceptPlacementItem)) {
+      const details = {
+        assigneeName: assignee,
+        scheduledFor: placement.scheduledFor,
+      };
+      const ok = await commitRequestStatusChange({ item: acceptPlacementItem, next: "Accepted" }, details);
+      if (!ok) return;
+      setAcceptPlacementItem(null);
+      setPlacement(null);
+      setAssigneePickerOpen(false);
+      return;
+    }
+
+    const item = scheduledItems.find((candidate) => candidate.id === placement.itemId);
+    if (!item) return;
+    const assignmentId = item.scheduleAssignment?.id;
+    if (!assignmentId) return;
+    const details = {
+      assigneeName: assignee,
+      scheduledFor: placement.scheduledFor,
+      notes: item.scheduleAssignment?.notes,
+    };
+
+    if (!liveData) {
+      updateLocalScheduleAssignments((prev) => updateScheduleAssignmentDetails(prev, assignmentId, details));
+      setSessions((prev) => applyScheduleDetails(prev, item, details, scheduledChangedStatus(item.scheduleAssignment?.scheduledFor, details.scheduledFor)));
+      setPlacement(null);
+      setAssigneePickerOpen(false);
+      return;
+    }
+
+    const result = await updateScheduleAssignmentDetailsAction({
+      workspaceSlug: workspace.slug,
+      scheduleAssignmentId: assignmentId,
+      ...details,
+    });
+
+    if (!result.ok) {
+      console.error("Failed to update schedule assignment details", result.error);
+      return;
+    }
+
+    updateLocalScheduleAssignments((prev) => updateScheduleAssignmentDetails(prev, assignmentId, details));
+    setSessions((prev) => applyScheduleDetails(prev, item, details, scheduledChangedStatus(item.scheduleAssignment?.scheduledFor, details.scheduledFor)));
+    setPlacement(null);
+    setAssigneePickerOpen(false);
+  }
+
+  function handleCancelPlacement() {
+    setPlacement(null);
+    setAcceptPlacementItem(null);
+    setAssigneePickerOpen(false);
   }
 
   return (
@@ -245,15 +508,22 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
             </div>
 
             {workspace.widgets.includes("schedule") && (
-              <Section>
-                <ScheduleBoard
-                  items={scheduleItems}
-                  onSelect={(id) => {
-                    setSelectedId(null);
-                    setSelectedScheduleId(id);
-                  }}
-                />
-              </Section>
+              <div ref={scheduleSectionRef}>
+                <Section>
+                  <ScheduleBoard
+                    items={scheduleItems}
+                    placement={placement}
+                    onSelect={(id) => {
+                      setSelectedId(null);
+                      setSelectedScheduleId(id);
+                    }}
+                    onPlaceTimeslot={handlePlaceTimeslot}
+                    onConfirmPlacement={handleConfirmPlacement}
+                    onChooseAssignee={() => setAssigneePickerOpen(true)}
+                    onCancelPlacement={handleCancelPlacement}
+                  />
+                </Section>
+              </div>
             )}
           </div>
         </main>
@@ -264,6 +534,8 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
           <RequestDetailPanel
             item={selected}
             onStatusChange={handleStatusChange}
+            onCheckpointAdvance={handleAdvanceCheckpoint}
+            actionBusy={actionBusy}
             onClose={() => setSelectedId(null)}
           />
         )}
@@ -274,10 +546,49 @@ export default function WorkspaceDashboard({ workspace, initialSessions, initial
           <ScheduleDetailPanel
             item={selectedSchedule}
             onScheduleStatusChange={handleScheduleStatusChange}
+            onEditTimeslot={handleEditTimeslot}
             onClose={() => setSelectedScheduleId(null)}
           />
         )}
       </SlideOver>
+
+      <ConfirmDialog
+        open={!!pendingRequestStatus}
+        title={pendingRequestStatus ? `${requestActionLabel(pendingRequestStatus.next)} request?` : ""}
+        description={pendingRequestStatus ? requestActionDescription(pendingRequestStatus.next) : ""}
+        confirmLabel={pendingRequestStatus ? requestActionLabel(pendingRequestStatus.next) : "Confirm"}
+        destructive={pendingRequestStatus?.next === "Rejected" || pendingRequestStatus?.next === "Cancelled"}
+        busy={actionBusy}
+        onCancel={() => {
+          if (!actionBusy) setPendingRequestStatus(null);
+        }}
+        onConfirm={confirmRequestStatusChange}
+      />
+
+      <ConfirmDialog
+        open={!!pendingScheduleStatus}
+        title={pendingScheduleStatus ? scheduleConfirmTitle(pendingScheduleStatus.next) : ""}
+        description=""
+        confirmLabel={pendingScheduleStatus ? scheduleConfirmLabel(pendingScheduleStatus.next) : "Confirm"}
+        destructive={pendingScheduleStatus?.next === "Cancelled"}
+        busy={actionBusy}
+        onCancel={() => {
+          if (!actionBusy) setPendingScheduleStatus(null);
+        }}
+        onConfirm={confirmScheduleStatusChange}
+      />
+
+      <AssigneePickerDialog
+        open={assigneePickerOpen && !!placement}
+        assignees={availableAssignees}
+        selected={placement?.assignee}
+        scheduledFor={placement?.scheduledFor}
+        onClose={() => setAssigneePickerOpen(false)}
+        onSelect={(assignee) => {
+          setPlacement((current) => current ? { ...current, assignee } : current);
+          setAssigneePickerOpen(false);
+        }}
+      />
     </div>
   );
 }
@@ -317,9 +628,7 @@ function scheduledWorkItemsForWorkspace(items: WorkItem[], workspace: WorkspaceC
     const scheduledFor = workspace.scheduleKind === "transport"
       ? transportScheduleTime(it)
       : outreachScheduleTime(index, it.status);
-    const assignedTo = workspace.scheduleKind === "transport"
-      ? transportAssignee(index)
-      : outreachAssignee(index);
+      const assignedTo = fallbackAssignee(workspace, index);
     const task = {
       ...it.task,
       assignedTo,
@@ -352,6 +661,8 @@ function scheduledWorkItemsFromAssignments(items: WorkItem[], assignments: Dashb
           ...item.task,
           assignedTo: assignment.assigneeName,
           scheduledFor: assignment.scheduledFor,
+          scheduleStatus: assignment.scheduleStatus,
+          rescheduledFrom: assignment.rescheduledFrom,
           partnerNotes: assignment.notes ?? item.task.partnerNotes,
         },
         scheduleAssignment: assignment,
@@ -381,8 +692,336 @@ function scheduleItemsFromWorkItems(items: ScheduledWorkItem[]): ScheduleItem[] 
       visitMode: visitModeFromWorkItem(it),
       priority: deriveUrgency(it.task, it.session.createdAt),
       kind: it.supportType,
+      preferredSlot: preferredSlotForWorkItem(it),
+      durationMinutes: scheduleDurationMinutes(),
     };
   });
+}
+
+function acceptPlacementId(item: WorkItem): string {
+  return `accept:${item.id}`;
+}
+
+function scheduleItemFromAcceptPlacement(item: WorkItem, placement: SchedulePlacement): ScheduleItem {
+  const type = item.task.selectedSubtypes[0] || item.route?.label || supportTypeLabels[item.supportType];
+  return {
+    id: acceptPlacementId(item),
+    title: `${type} · ${item.session.careRecipientName}`,
+    when: placement.scheduledFor,
+    meta: `${item.session.generalArea ?? "Unknown area"} · In progress`,
+    assignee: placement.assignee?.trim() || "Unassigned",
+    status: "In progress",
+    scheduleStatus: "Scheduled",
+    visitMode: visitModeFromWorkItem(item),
+    priority: deriveUrgency(item.task, item.session.createdAt),
+    kind: item.supportType,
+    preferredSlot: preferredSlotForWorkItem(item),
+    durationMinutes: scheduleDurationMinutes(),
+  };
+}
+
+function scheduleAssignmentFromMutation(
+  item: WorkItem,
+  workspace: WorkspaceConfig,
+  mutation: ScheduleAssignmentMutationResult,
+): DashboardScheduleAssignment {
+  return {
+    id: mutation.id,
+    workspaceId: workspace.id,
+    taskId: workItemTaskDbId(item) ?? undefined,
+    routeId: workItemRouteDbId(item) ?? undefined,
+    routeLabel: item.route?.label,
+    supportType: item.supportType,
+    requestStatus: "In progress",
+    assigneeName: mutation.assigneeName,
+    scheduledFor: mutation.scheduledFor,
+    scheduleStatus: mutation.scheduleStatus,
+    notes: mutation.notes,
+    sessionId: item.session.id,
+  };
+}
+
+function upsertScheduleAssignment(
+  assignments: DashboardScheduleAssignment[] | null | undefined,
+  assignment: DashboardScheduleAssignment,
+): DashboardScheduleAssignment[] | null | undefined {
+  if (assignments === undefined) return undefined;
+  const current = assignments ?? [];
+  const exists = current.some((candidate) => candidate.id === assignment.id);
+  if (exists) return current.map((candidate) => candidate.id === assignment.id ? assignment : candidate);
+  return [...current, assignment];
+}
+
+function updateScheduleAssignmentStatus(
+  assignments: DashboardScheduleAssignment[] | null | undefined,
+  assignmentId: string,
+  next: ScheduleStatus,
+): DashboardScheduleAssignment[] | null | undefined {
+  if (assignments === undefined) return undefined;
+  return (assignments ?? []).map((assignment) =>
+    assignment.id === assignmentId
+      ? { ...assignment, scheduleStatus: next, requestStatus: requestStatusFromScheduleStatus(next) ?? assignment.requestStatus }
+      : assignment
+  );
+}
+
+function updateScheduleAssignmentDetails(
+  assignments: DashboardScheduleAssignment[] | null | undefined,
+  assignmentId: string,
+  details: { assigneeName?: string; scheduledFor: string; notes?: string },
+): DashboardScheduleAssignment[] | null | undefined {
+  if (assignments === undefined) return undefined;
+  return (assignments ?? []).map((assignment) => {
+    if (assignment.id !== assignmentId) return assignment;
+    const scheduledChanged = Date.parse(assignment.scheduledFor) !== Date.parse(details.scheduledFor);
+    return {
+      ...assignment,
+      assigneeName: details.assigneeName || undefined,
+      scheduledFor: details.scheduledFor,
+      notes: details.notes || undefined,
+      scheduleStatus: scheduledChanged ? "Rescheduled" : assignment.scheduleStatus,
+      requestStatus: "In progress",
+      rescheduledFrom: scheduledChanged ? assignment.scheduledFor : assignment.rescheduledFrom,
+    };
+  });
+}
+
+function requestStatusFromScheduleStatus(status: ScheduleStatus): RequestStatus | null {
+  switch (status) {
+    case "Scheduled":
+    case "In progress":
+    case "Rescheduled":
+      return "In progress";
+    case "Completed":
+      return "Completed";
+    case "Cancelled":
+      return "Cancelled";
+    default:
+      return null;
+  }
+}
+
+function preferredSlotForWorkItem(item: WorkItem): PreferredScheduleSlot | undefined {
+  const details = item.task.details ?? {};
+
+  if (item.supportType === "transport") {
+    const appointment = typeof details.appointmentDateTime === "string" ? details.appointmentDateTime : "";
+    const appointmentMs = Date.parse(appointment);
+    if (Number.isNaN(appointmentMs)) return undefined;
+    const pickupIso = new Date(appointmentMs - 30 * 60_000).toISOString();
+    return {
+      iso: pickupIso,
+      label: `Preferred pickup around ${formatScheduleTime(pickupIso)}`,
+      durationMinutes: 60,
+    };
+  }
+
+  if (item.supportType === "welfare") {
+    const time = text(details.preferredTime);
+    const iso = preferredDayIso(details, item.session.createdAt, preferredHour(time));
+    if (!iso) return undefined;
+    const day = preferredDayLabel(details, item.session.createdAt);
+    const label = [day, time].filter(Boolean).join(" · ");
+    return {
+      iso,
+      label: label || `Preferred around ${formatScheduleTime(iso)}`,
+      durationMinutes: preferredDurationMinutes(time),
+    };
+  }
+
+  return undefined;
+}
+
+function defaultPlacementIso(): string {
+  const sgt = new Date(Date.now() + 8 * 3_600_000);
+  let dayOffset = 0;
+  let hour = sgt.getUTCHours() + 1;
+  if (hour < 9) hour = 9;
+  if (hour >= 18) {
+    dayOffset = 1;
+    hour = 9;
+  }
+  return new Date(Date.UTC(sgt.getUTCFullYear(), sgt.getUTCMonth(), sgt.getUTCDate() + dayOffset, hour - 8, 0)).toISOString();
+}
+
+function firstAvailablePlacementIso(seedIso: string, items: ScheduleItem[]): string {
+  const seedMs = Date.parse(seedIso);
+  if (Number.isNaN(seedMs)) return defaultPlacementIso();
+  const roundedSeed = roundUpToQuarterHour(seedMs);
+  const candidates: number[] = [];
+
+  for (let day = 0; day < 14; day += 1) {
+    const base = new Date(roundedSeed + 8 * 3_600_000);
+    const dayStart = Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate() + day) - 8 * 3_600_000;
+    const startMinute = day === 0
+      ? Math.max(9 * 60, minutesSinceSgtDayStart(roundedSeed))
+      : 9 * 60;
+    for (let minute = startMinute; minute <= 17 * 60; minute += 15) {
+      candidates.push(dayStart + minute * 60_000);
+    }
+  }
+
+  const available = candidates.find((candidate) => isCalendarSlotOpen(candidate, items));
+  return new Date(available ?? roundedSeed).toISOString();
+}
+
+function roundUpToQuarterHour(ms: number): number {
+  const quarterMs = 15 * 60_000;
+  return Math.ceil(ms / quarterMs) * quarterMs;
+}
+
+function minutesSinceSgtDayStart(ms: number): number {
+  const date = new Date(ms + 8 * 3_600_000);
+  return date.getUTCHours() * 60 + date.getUTCMinutes();
+}
+
+function isCalendarSlotOpen(startMs: number, items: ScheduleItem[]): boolean {
+  const endMs = startMs + scheduleDurationMinutes() * 60_000;
+  if (sgtDateKey(startMs) !== sgtDateKey(endMs - 1)) return false;
+  if (minutesSinceSgtDayStart(startMs) < 9 * 60 || minutesSinceSgtDayStart(endMs) > 18 * 60) return false;
+
+  return !items
+    .filter((item) => item.scheduleStatus !== "Cancelled")
+    .some((item) => {
+      const itemStart = Date.parse(item.when);
+      if (Number.isNaN(itemStart)) return false;
+      return intervalsOverlap(startMs, endMs, itemStart, itemStart + scheduleDurationMinutes(item) * 60_000);
+    });
+}
+
+function sgtDateKey(ms: number): string {
+  const date = new Date(ms + 8 * 3_600_000);
+  return `${date.getUTCFullYear()}-${date.getUTCMonth()}-${date.getUTCDate()}`;
+}
+
+function preferredDayLabel(details: Record<string, unknown>, createdAt: string): string {
+  const checkInDay = text(details.checkInDay);
+  if (checkInDay === "Choose date") return formatDateOnly(text(details.checkInDayValue));
+  if (checkInDay) return checkInDay;
+  return formatDateOnly(createdAt);
+}
+
+function preferredDayIso(details: Record<string, unknown>, createdAt: string, hour: number): string | undefined {
+  const checkInDay = text(details.checkInDay);
+  if (checkInDay === "Choose date") return dateAtSgtHour(text(details.checkInDayValue), hour);
+  const created = Date.parse(createdAt);
+  if (Number.isNaN(created)) return undefined;
+  const offset = checkInDay === "Tomorrow" ? 1 : 0;
+  const sgt = new Date(created + 8 * 3_600_000);
+  return new Date(Date.UTC(sgt.getUTCFullYear(), sgt.getUTCMonth(), sgt.getUTCDate() + offset, hour - 8, 0)).toISOString();
+}
+
+function dateAtSgtHour(iso: string, hour: number): string | undefined {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return undefined;
+  const sgt = new Date(ms + 8 * 3_600_000);
+  return new Date(Date.UTC(sgt.getUTCFullYear(), sgt.getUTCMonth(), sgt.getUTCDate(), hour - 8, 0)).toISOString();
+}
+
+function preferredHour(label: string): number {
+  const lower = label.toLowerCase();
+  if (lower.includes("afternoon")) return 14;
+  if (lower.includes("evening")) return 17;
+  return 9;
+}
+
+function preferredDurationMinutes(label: string): number {
+  const lower = label.toLowerCase();
+  if (lower.includes("morning") || lower.includes("afternoon") || lower.includes("evening")) return 180;
+  return 90;
+}
+
+function formatDateOnly(iso: string): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleDateString("en-SG", { weekday: "short", day: "numeric", month: "short" });
+}
+
+function text(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function availableAssigneesForSlot(
+  workspace: WorkspaceConfig,
+  items: ScheduleItem[],
+  placement: SchedulePlacement,
+): string[] {
+  const targetMs = Date.parse(placement.scheduledFor);
+  const targetEndMs = targetMs + scheduleDurationMinutes() * 60_000;
+  const busy = new Set(
+    items
+      .filter((item) => item.id !== placement.itemId)
+      .filter((item) => item.scheduleStatus !== "Cancelled")
+      .filter((item) => {
+        const ms = Date.parse(item.when);
+        const endMs = ms + scheduleDurationMinutes(item) * 60_000;
+        return !Number.isNaN(ms) && !Number.isNaN(targetMs) && intervalsOverlap(targetMs, targetEndMs, ms, endMs);
+      })
+      .map((item) => item.assignee?.trim())
+      .filter((name): name is string => Boolean(name))
+  );
+
+  return assigneesForWorkspace(workspace).filter((assignee) => !busy.has(assignee));
+}
+
+function scheduleDurationMinutes(item?: ScheduleItem): number {
+  return item?.durationMinutes ?? 60;
+}
+
+function intervalsOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number) {
+  return aStart < bEnd && bStart < aEnd;
+}
+
+function fallbackAssignee(workspace: WorkspaceConfig, index: number): string {
+  const roster = assigneesForWorkspace(workspace);
+  return roster[index % Math.max(roster.length, 1)] ?? "Unassigned";
+}
+
+function requestActionLabel(status: RequestStatus): string {
+  switch (status) {
+    case "Accepted":
+      return "Accept";
+    case "Rejected":
+      return "Reject";
+    case "In progress":
+      return "Start";
+    case "Completed":
+      return "Complete";
+    case "Cancelled":
+      return "Cancel";
+    default:
+      return status;
+  }
+}
+
+function requestActionDescription(status: RequestStatus): string {
+  if (status === "Accepted") return "This accepts the request and creates a schedule slot to place on the calendar.";
+  if (status === "Rejected") return "This records the reason. If a fallback partner is available, the request is rerouted automatically.";
+  if (status === "Completed") return "This closes the request as completed.";
+  if (status === "Cancelled") return "This cancels the request.";
+  return "This updates the request status.";
+}
+
+function scheduleActionLabel(status: ScheduleStatus): string {
+  switch (status) {
+    case "Completed":
+      return "Complete";
+    case "Cancelled":
+      return "Cancel";
+    default:
+      return status;
+  }
+}
+
+function scheduleConfirmTitle(status: ScheduleStatus): string {
+  if (status === "Cancelled") return "Cancel scheduled task?";
+  return `${scheduleActionLabel(status)} scheduled task?`;
+}
+
+function scheduleConfirmLabel(status: ScheduleStatus): string {
+  if (status === "Cancelled") return "Cancel task";
+  return scheduleActionLabel(status);
 }
 
 function scheduleStatusRank(status: RequestStatus) {
@@ -406,14 +1045,6 @@ function transportScheduleTime(item: WorkItem) {
   const hourSgt = new Date(pickup.getTime() + 8 * 3_600_000).getUTCHours();
   if (hourSgt < 9) return isoSgt(2026, 6, 6, 9, 0);
   return pickup.toISOString();
-}
-
-function outreachAssignee(index: number) {
-  return ["Aisha Rahman", "Ben Tan", "Cheryl Lim", "Daniel Goh"][index % 4];
-}
-
-function transportAssignee(index: number) {
-  return ["Wei Ming Tan", "Nora Lim", "Isaac Koh"][index % 3];
 }
 
 function visitModeFromWorkItem(it: WorkItem): ScheduleItem["visitMode"] {
@@ -641,6 +1272,18 @@ function formatInventoryDate(iso: string) {
   return new Date(iso).toLocaleString("en-SG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
 }
 
+function formatScheduleTime(iso: string) {
+  if (!iso) return "Not scheduled";
+  return new Date(iso).toLocaleString("en-SG", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 function latestInventoryDisplayDate(values: string[]) {
   return values.reduce((latest, value) => {
     const latestMs = Date.parse(latest);
@@ -654,7 +1297,13 @@ function isoSgt(y: number, m: number, d: number, h: number, min: number) {
   return new Date(Date.UTC(y, m - 1, d, h - 8, min, 0)).toISOString();
 }
 
-function applyStatus(sessions: RequestSession[], item: WorkItem, next: RequestStatus, reason?: string): RequestSession[] {
+function applyStatus(
+  sessions: RequestSession[],
+  item: WorkItem,
+  next: RequestStatus,
+  reason?: string,
+  scheduleDetails?: { assigneeName?: string; scheduledFor: string; notes?: string },
+): RequestSession[] {
   return sessions.map((s) => {
     if (s.id !== item.sessionId) return s;
     const tasks = s.tasks.map((t) => {
@@ -666,10 +1315,245 @@ function applyStatus(sessions: RequestSession[], item: WorkItem, next: RequestSt
         const updatedTask = { ...t, fulfilmentRoutes: routes };
         return { ...updatedTask, status: taskStatus(updatedTask) };
       }
-      return { ...t, status: next, ...(reason ? { rejectionReason: reason } : {}) };
+      return {
+        ...t,
+        status: next,
+        ...(reason && next === "Rejected" ? { rejectionReason: reason } : {}),
+        ...(scheduleDetails
+          ? {
+              assignedTo: scheduleDetails.assigneeName,
+              scheduledFor: scheduleDetails.scheduledFor,
+              scheduleStatus: "Scheduled" as const,
+              partnerNotes: scheduleDetails.notes,
+            }
+          : next === "Completed" || next === "Cancelled"
+            ? { scheduleStatus: next }
+            : {}),
+      };
     });
     return { ...s, tasks, overallStatus: rollupStatus(tasks.map(taskStatus)) };
   });
+}
+
+function applyScheduleDetails(
+  sessions: RequestSession[],
+  item: WorkItem,
+  details: { assigneeName?: string; scheduledFor: string; notes?: string },
+  scheduleStatus: "Scheduled" | "Rescheduled",
+): RequestSession[] {
+  return sessions.map((s) => {
+    if (s.id !== item.sessionId) return s;
+    const tasks = s.tasks.map((t) =>
+      t.supportType === item.supportType
+        ? {
+            ...t,
+            status: "In progress" as RequestStatus,
+            assignedTo: details.assigneeName,
+            scheduledFor: details.scheduledFor,
+            scheduleStatus,
+            partnerNotes: details.notes,
+            ...(scheduleStatus === "Rescheduled" ? { rescheduledFrom: item.task.scheduledFor } : {}),
+          }
+        : t
+    );
+    return { ...s, tasks, overallStatus: rollupStatus(tasks.map(taskStatus)) };
+  });
+}
+
+function applyTaskReroute(
+  sessions: RequestSession[],
+  item: WorkItem,
+  nextPrimaryOrgId: string,
+  fallbackOrgIds: string[],
+): RequestSession[] {
+  return sessions.map((s) => {
+    if (s.id !== item.sessionId) return s;
+    const tasks = s.tasks.map((t) =>
+      t.supportType === item.supportType
+        ? {
+            ...t,
+            status: "Pending" as RequestStatus,
+            primaryOrganisationId: nextPrimaryOrgId,
+            fallbackOrganisationIds: fallbackOrgIds,
+            assignedTo: undefined,
+            scheduledFor: undefined,
+            scheduleStatus: undefined,
+            rescheduledFrom: undefined,
+            partnerNotes: undefined,
+            rejectionReason: undefined,
+          }
+        : t
+    );
+    return { ...s, tasks, overallStatus: rollupStatus(tasks.map(taskStatus)) };
+  });
+}
+
+function scheduledChangedStatus(previous: string | undefined, next: string): "Scheduled" | "Rescheduled" {
+  return previous && Date.parse(previous) !== Date.parse(next) ? "Rescheduled" : "Scheduled";
+}
+
+function applyRouteCheckpoint(
+  sessions: RequestSession[],
+  item: WorkItem,
+  stage: FulfilmentCheckpointStage,
+  completedAt: string,
+  actorName?: string,
+): RequestSession[] {
+  if (!item.route) return sessions;
+  const label = checkpointLabel(stage);
+  const nextStatus = requestStatusForCheckpointStage(stage);
+
+  return sessions.map((s) => {
+    if (s.id !== item.sessionId) return s;
+    const tasks = s.tasks.map((t) => {
+      if (t.supportType !== item.supportType) return t;
+      const routes = (t.fulfilmentRoutes ?? []).map((r) => {
+        if (r.label !== item.route!.label) return r;
+        const checkpoints = [
+          ...(r.checkpoints ?? []).filter((checkpoint) => checkpoint.stage !== stage),
+          { stage, label, completedAt, actorName },
+        ].sort((a, b) => Date.parse(a.completedAt) - Date.parse(b.completedAt));
+        return {
+          ...r,
+          lifecycle: nextStatus,
+          checkpoints,
+          displayStatus: label,
+          displayStatusUpdatedAt: completedAt,
+        };
+      });
+      const updatedTask = { ...t, fulfilmentRoutes: routes };
+      return { ...updatedTask, status: taskStatus(updatedTask) };
+    });
+    return { ...s, tasks, overallStatus: rollupStatus(tasks.map(taskStatus)) };
+  });
+}
+
+function requestStatusForCheckpointStage(stage: FulfilmentCheckpointStage): RequestStatus {
+  if (stage === "accepted") return "Accepted";
+  if (stage === "completed") return "Completed";
+  return "In progress";
+}
+
+function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel,
+  destructive,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  destructive?: boolean;
+  busy?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-950/30 px-4">
+      <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-4 shadow-xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-[15.5px] font-semibold text-slate-800">{title}</h2>
+            {description && <p className="mt-1 text-[15.5px] leading-relaxed text-slate-500">{description}</p>}
+            <p className="mt-2 text-[13px] font-medium text-slate-400">This action cannot be undone.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Close confirmation"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="rounded-md border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Back
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-[13px] font-medium text-white transition-colors disabled:cursor-wait disabled:opacity-60",
+              destructive ? "bg-red-600 hover:bg-red-700" : "bg-slate-900 hover:bg-slate-800"
+            )}
+          >
+            {busy ? "Working..." : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AssigneePickerDialog({
+  open,
+  assignees,
+  selected,
+  scheduledFor,
+  onClose,
+  onSelect,
+}: {
+  open: boolean;
+  assignees: string[];
+  selected?: string;
+  scheduledFor?: string;
+  onClose: () => void;
+  onSelect: (assignee: string) => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-950/30 px-4">
+      <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-4 shadow-xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-800">Select assignee</h2>
+            <p className="mt-1 text-xs text-slate-400">{scheduledFor ? formatScheduleTime(scheduledFor) : "Selected timeslot"}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="Close assignee picker">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="mt-4 space-y-1.5">
+          {assignees.length ? assignees.map((assignee) => (
+            <button
+              key={assignee}
+              type="button"
+              onClick={() => onSelect(assignee)}
+              className={cn(
+                "flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm font-medium transition-colors",
+                selected === assignee
+                  ? "border-blue-200 bg-blue-50 text-blue-900"
+                  : "border-slate-200 text-slate-700 hover:bg-slate-50"
+              )}
+            >
+              {assignee}
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600">Available</span>
+            </button>
+          )) : (
+            <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+              No listed assignees are available at this time.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function Section({ children, className = "" }: { children: React.ReactNode; className?: string }) {

@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { WorkItem } from "@/lib/contract";
-import { supportTypeLabels } from "@/lib/contract";
+import { routeDisplayStatus, supportTypeLabels } from "@/lib/contract";
 import { URGENCY_STYLES } from "./theme";
 import { SUPPORT_ICON, costForItem, deriveUrgency, formatSubmitted, neededByLabel, neededBySortKey } from "./format";
 import type { QueueColumn } from "./RequestQueue";
@@ -17,6 +17,10 @@ const URGENCY_RANK = { High: 0, Medium: 1, Low: 2 } as const;
 const STATUS_RANK = { Pending: 0, Accepted: 1, "In progress": 2, Completed: 3, Rejected: 4, Cancelled: 5 } as const;
 
 const dash = (s?: string | null) => (s && s.trim() ? s : "—");
+
+function displayStatus(it: WorkItem): string {
+  return it.route ? routeDisplayStatus(it.task, it.route) : it.status;
+}
 
 // Subtype / items summary: supplies route → "Masks ×1"; food route → its
 // label; partner/food task → selected subtypes.
@@ -163,9 +167,9 @@ export const REQUEST_COLUMNS: Record<string, QueueColumn> = {
     header: "Status",
     core: true,
     width: 130,
-    value: (it) => it.status,
+    value: (it) => displayStatus(it),
     sortValue: (it) => STATUS_RANK[it.status],
-    cell: (it) => <StatusBadge status={it.status} />,
+    cell: (it) => <StatusBadge status={displayStatus(it)} />,
   },
 };
 

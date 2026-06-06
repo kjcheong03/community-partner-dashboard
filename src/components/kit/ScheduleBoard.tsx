@@ -1,9 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Boxes, ChevronLeft, ChevronRight, Compass, HeartPulse, Home, PhoneCall, Soup, Truck, Video, type LucideIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import { Boxes, Check, ChevronLeft, ChevronRight, Compass, HeartPulse, Home, PhoneCall, Soup, Truck, UserRound, Video, X, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ScheduleStatus } from "@/lib/schedule";
+
+export type PreferredScheduleSlot = {
+  iso: string;
+  label: string;
+  durationMinutes?: number;
+};
+
+export type SchedulePlacement = {
+  itemId: string;
+  scheduledFor: string;
+  assignee?: string;
+};
 
 export type ScheduleItem = {
   id: string;
@@ -16,6 +28,8 @@ export type ScheduleItem = {
   visitMode?: "home" | "video" | "phone";
   priority?: "High" | "Medium" | "Low";
   kind?: "supplies" | "food" | "welfare" | "transport" | "referral";
+  preferredSlot?: PreferredScheduleSlot;
+  durationMinutes?: number;
 };
 
 type Placed = ScheduleItem & {
@@ -25,11 +39,31 @@ type Placed = ScheduleItem & {
   ms: number;
 };
 
+type PreferredZone = PreferredScheduleSlot & {
+  itemId: string;
+  title: string;
+  dateKey: string;
+  hour: number;
+  minute: number;
+  ms: number;
+};
+
+type LaidOutBlock = Placed & {
+  column: number;
+  columnCount: number;
+};
+
+type DragState = {
+  candidateIso: string;
+  valid: boolean;
+};
+
 const START_HOUR = 9;
 const END_HOUR = 18;
 const HOURS = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
-const SLOT_HEIGHT = 46;
+const SLOT_HEIGHT = 54;
 const DAY_MS = 86_400_000;
+const SESSION_DURATION_MINUTES = 60;
 
 const KIND_ICON: Record<NonNullable<ScheduleItem["kind"]>, LucideIcon> = {
   supplies: Boxes,
@@ -73,9 +107,28 @@ function minuteOf(ms: number) {
   return new Date(ms + 8 * 3_600_000).getUTCMinutes();
 }
 
+function minutesSinceSgtDayStart(ms: number) {
+  return hourOf(ms) * 60 + minuteOf(ms);
+}
+
 function normalizePlaced(it: ScheduleItem): Placed {
   const ms = new Date(it.when).getTime();
   return { ...it, dateKey: dateKey(ms), hour: hourOf(ms), minute: minuteOf(ms), ms };
+}
+
+function normalizePreferredZone(item: ScheduleItem): PreferredZone | null {
+  if (!item.preferredSlot) return null;
+  const ms = new Date(item.preferredSlot.iso).getTime();
+  if (Number.isNaN(ms)) return null;
+  return {
+    ...item.preferredSlot,
+    itemId: item.id,
+    title: item.title,
+    dateKey: dateKey(ms),
+    hour: hourOf(ms),
+    minute: minuteOf(ms),
+    ms,
+  };
 }
 
 function dayLabel(ms: number) {
@@ -94,11 +147,148 @@ function blockOffset(it: Placed) {
   return Math.max(0, ((it.hour - START_HOUR) * 60 + it.minute) / 60) * SLOT_HEIGHT;
 }
 
-function blockSlotKey(it: Placed) {
-  return `${it.dateKey}:${it.hour}:${Math.floor(it.minute / 30)}`;
+function zoneOffset(zone: PreferredZone) {
+  return Math.max(0, ((zone.hour - START_HOUR) * 60 + zone.minute) / 60) * SLOT_HEIGHT;
+}
+
+function zoneHeight(zone: PreferredZone) {
+  return Math.max(22, ((zone.durationMinutes ?? 90) / 60) * SLOT_HEIGHT);
+}
+
+function placedFromPlacement(item: ScheduleItem, placement: SchedulePlacement): Placed {
+  const ms = new Date(placement.scheduledFor).getTime();
+  return {
+    ...item,
+    when: placement.scheduledFor,
+    assignee: placement.assignee?.trim() || item.assignee,
+    dateKey: dateKey(ms),
+    hour: hourOf(ms),
+    minute: minuteOf(ms),
+    ms,
+  };
+}
+
+function isoFromGridPoint(root: HTMLElement, clientX: number, clientY: number) {
+  const columns = [...root.querySelectorAll<HTMLElement>("[data-day-ms]")];
+  const column = columns.find((candidate) => {
+    const rect = candidate.getBoundingClientRect();
+    return clientX >= rect.left && clientX <= rect.right;
+  });
+  if (!column) return null;
+
+  const dayMs = Number(column.dataset.dayMs);
+  if (!Number.isFinite(dayMs)) return null;
+  const rect = column.getBoundingClientRect();
+  const y = Math.min(Math.max(clientY - rect.top, 0), HOURS.length * SLOT_HEIGHT - 1);
+  const minutesFromStart = Math.round((y / SLOT_HEIGHT) * 60 / 15) * 15;
+  const clampedMinutes = Math.min(minutesFromStart, (END_HOUR - START_HOUR) * 60 - SESSION_DURATION_MINUTES);
+  return new Date(dayMs + (START_HOUR * 60 + clampedMinutes) * 60_000).toISOString();
+}
+
+function durationMinutesFor(item: ScheduleItem) {
+  return item.durationMinutes ?? SESSION_DURATION_MINUTES;
+}
+
+function eventEndMs(item: ScheduleItem | Placed) {
+  return new Date(item.when).getTime() + durationMinutesFor(item) * 60_000;
+}
+
+function intervalsOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number) {
+  return aStart < bEnd && bStart < aEnd;
+}
+
+function occupiesScheduleTime(item: ScheduleItem) {
+  return item.scheduleStatus !== "Cancelled";
+}
+
+function isPlacementValid(candidate: Placed, rows: Placed[]) {
+  const candidateStart = candidate.ms;
+  const candidateEnd = eventEndMs(candidate);
+  if (dateKey(candidateEnd - 1) !== candidate.dateKey) return false;
+  if (minutesSinceSgtDayStart(candidateEnd) > END_HOUR * 60) return false;
+
+  return !rows
+    .filter(occupiesScheduleTime)
+    .filter((row) => row.dateKey === candidate.dateKey)
+    .some((row) => intervalsOverlap(candidateStart, candidateEnd, row.ms, eventEndMs(row)));
+}
+
+function layoutDayBlocks(items: Placed[]): LaidOutBlock[] {
+  const sorted = [...items].sort((a, b) => a.ms - b.ms || eventEndMs(a) - eventEndMs(b));
+  const visited = new Set<string>();
+  const output: LaidOutBlock[] = [];
+
+  for (const item of sorted) {
+    if (visited.has(item.id)) continue;
+    const group: Placed[] = [];
+    const stack = [item];
+    visited.add(item.id);
+
+    while (stack.length) {
+      const current = stack.pop()!;
+      group.push(current);
+      for (const candidate of sorted) {
+        if (visited.has(candidate.id)) continue;
+        if (group.some((existing) => intervalsOverlap(existing.ms, eventEndMs(existing), candidate.ms, eventEndMs(candidate)))) {
+          visited.add(candidate.id);
+          stack.push(candidate);
+        }
+      }
+    }
+
+    output.push(...layoutOverlapGroup(group));
+  }
+
+  return output.sort((a, b) => a.ms - b.ms || a.column - b.column);
+}
+
+function layoutOverlapGroup(group: Placed[]): LaidOutBlock[] {
+  const columns: number[] = [];
+  const assignments = new Map<string, number>();
+  const sorted = [...group].sort((a, b) => a.ms - b.ms || eventEndMs(a) - eventEndMs(b));
+
+  for (const item of sorted) {
+    let column = columns.findIndex((end) => end <= item.ms);
+    if (column === -1) {
+      column = columns.length;
+      columns.push(eventEndMs(item));
+    } else {
+      columns[column] = eventEndMs(item);
+    }
+    assignments.set(item.id, column);
+  }
+
+  const columnCount = Math.max(1, columns.length);
+  return group.map((item) => ({
+    ...item,
+    column: assignments.get(item.id) ?? 0,
+    columnCount,
+  }));
+}
+
+function blockLayoutStyle(item: LaidOutBlock, minHeight = 40): CSSProperties {
+  const width = 100 / item.columnCount;
+  return {
+    top: blockOffset(item) + 4,
+    left: `calc(${item.column * width}% + 4px)`,
+    width: `calc(${width}% - 8px)`,
+    height: Math.max(minHeight, (durationMinutesFor(item) / 60) * SLOT_HEIGHT - 6),
+  };
+}
+
+function draftBlockLayoutStyle(item: LaidOutBlock): CSSProperties {
+  const width = 100 / item.columnCount;
+  return {
+    top: blockOffset(item) + 4,
+    left: `calc(${item.column * width}% + 4px)`,
+    width: `calc(${width}% - 8px)`,
+    minHeight: 70,
+  };
 }
 
 function scheduleTone(item: ScheduleItem) {
+  if (item.scheduleStatus === "Completed") return "border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100";
+  if (item.scheduleStatus === "Cancelled") return "border-slate-200 bg-white text-slate-300 hover:bg-slate-50";
   if (item.kind === "transport") return "border-sky-200 bg-sky-50 text-sky-950 hover:bg-sky-100";
   if (item.visitMode === "home") return "border-red-200 bg-red-50 text-red-900 hover:bg-red-100";
   if (item.visitMode === "video" || item.visitMode === "phone") return "border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100";
@@ -113,21 +303,90 @@ function titleParts(title: string) {
 export default function ScheduleBoard({
   items,
   onSelect,
+  placement,
+  onPlaceTimeslot,
+  onConfirmPlacement,
+  onChooseAssignee,
+  onCancelPlacement,
   className,
 }: {
   items: ScheduleItem[];
   onSelect?: (id: string) => void;
+  placement?: SchedulePlacement | null;
+  onPlaceTimeslot?: (iso: string) => void;
+  onConfirmPlacement?: () => void;
+  onChooseAssignee?: () => void;
+  onCancelPlacement?: () => void;
   className?: string;
 }) {
   const [mode, setMode] = useState<"time" | "assignee">("time");
   const [weekOffset, setWeekOffset] = useState(0);
   const [todayKey] = useState(() => dateKey(Date.now()));
-  const placed = useMemo(() => items.map(normalizePlaced).sort((a, b) => a.ms - b.ms), [items]);
-  const anchorMs = placed[0]?.ms ?? Date.UTC(2026, 5, 5);
+  const [dragState, setDragState] = useState<DragState | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const dragStateRef = useRef<DragState | null>(null);
+  const activeMode = placement ? "time" : mode;
+  const placed = useMemo(() => items.map(normalizePlaced).filter((item) => !placement || item.id !== placement.itemId).sort((a, b) => a.ms - b.ms), [items, placement]);
+  const preferredZones = useMemo(
+    () => placement
+      ? items
+        .map(normalizePreferredZone)
+        .filter((zone): zone is PreferredZone => zone !== null && zone.itemId === placement.itemId)
+      : [],
+    [items, placement]
+  );
+  const placementItem = useMemo(() => placement ? items.find((item) => item.id === placement.itemId) ?? null : null, [items, placement]);
+  const effectivePlacement = placement && dragState ? { ...placement, scheduledFor: dragState.candidateIso } : placement;
+  const draft = effectivePlacement && placementItem ? placedFromPlacement(placementItem, effectivePlacement) : null;
+  const draftValid = draft ? isPlacementValid(draft, placed) : true;
+  const anchorMs = draft?.ms ?? placed[0]?.ms ?? Date.UTC(2026, 5, 5);
   const start = weekStart(anchorMs) + weekOffset * 7 * DAY_MS;
   const week = useMemo(() => Array.from({ length: 7 }, (_, i) => start + i * DAY_MS), [start]);
   const weekKeys = useMemo(() => new Set(week.map(dateKey)), [week]);
   const rows = placed.filter((it) => weekKeys.has(it.dateKey) && it.hour >= START_HOUR && it.hour < END_HOUR);
+  const zones = preferredZones.filter((zone) => weekKeys.has(zone.dateKey) && zone.hour >= START_HOUR && zone.hour < END_HOUR);
+
+  useEffect(() => {
+    if (!dragState || !placement || !placementItem) return;
+
+    function handlePointerMove(event: PointerEvent) {
+      const root = gridRef.current;
+      if (!root) return;
+      const candidateIso = isoFromGridPoint(root, event.clientX, event.clientY);
+      if (!candidateIso) {
+        setDragState((current) => current ? { ...current, valid: false } : current);
+        return;
+      }
+      const candidate = placedFromPlacement(placementItem!, { ...placement!, scheduledFor: candidateIso });
+      const valid = isPlacementValid(candidate, placed);
+      const next = { candidateIso, valid };
+      dragStateRef.current = next;
+      setDragState(next);
+    }
+
+    function handlePointerUp() {
+      const currentDrag = dragStateRef.current;
+      if (!currentDrag) return;
+      if (currentDrag.valid) onPlaceTimeslot?.(currentDrag.candidateIso);
+      dragStateRef.current = null;
+      setDragState(null);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [dragState, onPlaceTimeslot, placed, placement, placementItem]);
+
+  function handleBeginPlacementDrag(event: ReactPointerEvent) {
+    if (!placement) return;
+    event.preventDefault();
+    const initial = { candidateIso: placement.scheduledFor, valid: true };
+    dragStateRef.current = initial;
+    setDragState(initial);
+  }
 
   return (
     <div className={cn("flex flex-col gap-3", className)}>
@@ -140,7 +399,7 @@ export default function ScheduleBoard({
               onClick={() => setMode(m)}
               className={cn(
                 "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                mode === m ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
+                activeMode === m ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
               )}
             >
               {m === "time" ? "By time" : "By assignee"}
@@ -168,8 +427,21 @@ export default function ScheduleBoard({
         </div>
       </div>
 
-      {mode === "time" ? (
-        <WeekGrid rows={rows} week={week} todayKey={todayKey} onSelect={onSelect} />
+      {activeMode === "time" ? (
+        <WeekGrid
+          gridRef={gridRef}
+          rows={rows}
+          preferredZones={zones}
+          draft={draft}
+          draftValid={draftValid}
+          week={week}
+          todayKey={todayKey}
+          onSelect={onSelect}
+          onBeginPlacementDrag={placement ? handleBeginPlacementDrag : undefined}
+          onConfirmPlacement={onConfirmPlacement}
+          onChooseAssignee={onChooseAssignee}
+          onCancelPlacement={onCancelPlacement}
+        />
       ) : (
         <AssigneeGrid rows={rows} onSelect={onSelect} />
       )}
@@ -177,16 +449,47 @@ export default function ScheduleBoard({
   );
 }
 
-function WeekGrid({ rows, week, todayKey, onSelect }: { rows: Placed[]; week: number[]; todayKey: string; onSelect?: (id: string) => void }) {
+function WeekGrid({
+  gridRef,
+  rows,
+  preferredZones,
+  draft,
+  draftValid,
+  week,
+  todayKey,
+  onSelect,
+  onBeginPlacementDrag,
+  onConfirmPlacement,
+  onChooseAssignee,
+  onCancelPlacement,
+}: {
+  gridRef: RefObject<HTMLDivElement | null>;
+  rows: Placed[];
+  preferredZones: PreferredZone[];
+  draft?: Placed | null;
+  draftValid?: boolean;
+  week: number[];
+  todayKey: string;
+  onSelect?: (id: string) => void;
+  onBeginPlacementDrag?: (event: ReactPointerEvent) => void;
+  onConfirmPlacement?: () => void;
+  onChooseAssignee?: () => void;
+  onCancelPlacement?: () => void;
+}) {
   const byDay = useMemo(() => {
     const m = new Map<string, Placed[]>();
     for (const r of rows) m.set(r.dateKey, [...(m.get(r.dateKey) ?? []), r]);
     return m;
   }, [rows]);
+  const zonesByDay = useMemo(() => {
+    const m = new Map<string, PreferredZone[]>();
+    for (const zone of preferredZones) m.set(zone.dateKey, [...(m.get(zone.dateKey) ?? []), zone]);
+    return m;
+  }, [preferredZones]);
 
   return (
     <div className="overflow-x-auto thin-scrollbar rounded-lg border border-slate-200">
-      <div className="grid min-w-[980px]" style={{ gridTemplateColumns: "64px repeat(7, minmax(128px, 1fr))" }}>
+      <div ref={gridRef} className="grid min-w-[980px]" style={{ gridTemplateColumns: "64px repeat(7, minmax(128px, 1fr))" }}>
         <div className="sticky left-0 z-20 border-b border-r border-slate-200 bg-slate-50" />
         {week.map((ms) => {
           const key = dateKey(ms);
@@ -208,7 +511,20 @@ function WeekGrid({ rows, week, todayKey, onSelect }: { rows: Placed[]; week: nu
         {week.map((ms) => {
           const key = dateKey(ms);
           return (
-            <DayColumn key={key} rows={byDay.get(key) ?? []} today={key === todayKey} onSelect={onSelect} />
+            <DayColumn
+              key={key}
+              dayMs={ms}
+              rows={byDay.get(key) ?? []}
+              preferredZones={zonesByDay.get(key) ?? []}
+              draft={draft?.dateKey === key ? draft : null}
+              draftValid={draft?.dateKey === key ? draftValid : true}
+              today={key === todayKey}
+              onSelect={onSelect}
+              onBeginPlacementDrag={onBeginPlacementDrag}
+              onConfirmPlacement={onConfirmPlacement}
+              onChooseAssignee={onChooseAssignee}
+              onCancelPlacement={onCancelPlacement}
+            />
           );
         })}
       </div>
@@ -220,7 +536,7 @@ function TimeAxis() {
   return (
     <div className="sticky left-0 z-10 border-r border-slate-200 bg-white">
       {HOURS.map((h) => (
-        <div key={h} className="h-[46px] border-b border-slate-100 pr-2 pt-1 text-right text-[11px] font-medium tabular-nums text-slate-400">
+        <div key={h} className="h-[54px] border-b border-slate-100 pr-2 pt-1 text-right text-[11px] font-medium tabular-nums text-slate-400">
           {hhmm(h)}
         </div>
       ))}
@@ -228,40 +544,155 @@ function TimeAxis() {
   );
 }
 
-function DayColumn({ rows, today, onSelect }: { rows: Placed[]; today?: boolean; onSelect?: (id: string) => void }) {
+function DayColumn({
+  dayMs,
+  rows,
+  preferredZones,
+  draft,
+  draftValid,
+  today,
+  onSelect,
+  onBeginPlacementDrag,
+  onConfirmPlacement,
+  onChooseAssignee,
+  onCancelPlacement,
+}: {
+  dayMs: number;
+  rows: Placed[];
+  preferredZones: PreferredZone[];
+  draft?: Placed | null;
+  draftValid?: boolean;
+  today?: boolean;
+  onSelect?: (id: string) => void;
+  onBeginPlacementDrag?: (event: ReactPointerEvent) => void;
+  onConfirmPlacement?: () => void;
+  onChooseAssignee?: () => void;
+  onCancelPlacement?: () => void;
+}) {
   const visibleRows = rows.filter((r) => r.hour >= START_HOUR && r.hour < END_HOUR);
-  const groups = new Map<string, Placed[]>();
-  for (const r of visibleRows) groups.set(blockSlotKey(r), [...(groups.get(blockSlotKey(r)) ?? []), r]);
+  const layout = layoutDayBlocks(draft ? [...visibleRows, draft] : visibleRows);
 
   return (
-    <div className={cn("relative border-r border-slate-200", today && "bg-blue-50/30")} style={{ height: HOURS.length * SLOT_HEIGHT }}>
+    <div
+      data-day-ms={dayMs}
+      className={cn("relative border-r border-slate-200", today && "bg-blue-50/30")}
+      style={{ height: HOURS.length * SLOT_HEIGHT }}
+    >
       {HOURS.map((h) => (
-        <div key={h} className="h-[46px] border-b border-slate-100" />
+        <div key={h} className="h-[54px] border-b border-slate-100" />
       ))}
-      {[...groups.values()].map((group) => (
-        <StackedBlocks key={blockSlotKey(group[0])} group={group} onSelect={onSelect} />
+      {preferredZones.map((zone) => (
+        <PreferredZoneBlock key={`${zone.itemId}:${zone.iso}`} zone={zone} />
       ))}
+      {layout.map((item) =>
+        draft && item.id === draft.id ? (
+          <DraftScheduleBlock
+            key={item.id}
+            item={item}
+            valid={draftValid ?? true}
+            onBeginPlacementDrag={onBeginPlacementDrag}
+            onConfirmPlacement={onConfirmPlacement}
+            onChooseAssignee={onChooseAssignee}
+            onCancelPlacement={onCancelPlacement}
+          />
+        ) : (
+          <ScheduleBlock key={item.id} item={item} onSelect={onSelect} compact />
+        )
+      )}
     </div>
   );
 }
 
-function StackedBlocks({ group, onSelect }: { group: Placed[]; onSelect?: (id: string) => void }) {
-  const shown = group.slice(0, 2);
-  const hidden = group.length - shown.length;
+function PreferredZoneBlock({ zone }: { zone: PreferredZone }) {
   return (
-    <div className="absolute left-1 right-1 flex flex-col gap-1" style={{ top: blockOffset(group[0]) + 4 }}>
-      {shown.map((it) => (
-        <ScheduleBlock key={it.id} item={it} onSelect={onSelect} compact />
-      ))}
-      {hidden > 0 && (
+    <div
+      className="pointer-events-none absolute left-1 right-1 rounded-md border border-dashed border-amber-300 bg-amber-100/40"
+      style={{ top: zoneOffset(zone) + 3, height: zoneHeight(zone) }}
+      aria-label={zone.label}
+    />
+  );
+}
+
+function DraftScheduleBlock({
+  item,
+  valid,
+  onBeginPlacementDrag,
+  onConfirmPlacement,
+  onChooseAssignee,
+  onCancelPlacement,
+}: {
+  item: LaidOutBlock;
+  valid: boolean;
+  onBeginPlacementDrag?: (event: ReactPointerEvent) => void;
+  onConfirmPlacement?: () => void;
+  onChooseAssignee?: () => void;
+  onCancelPlacement?: () => void;
+}) {
+  const { type, recipient } = titleParts(item.title);
+  const Icon = item.visitMode ? VISIT_ICON[item.visitMode] : item.kind ? KIND_ICON[item.kind] : undefined;
+  const hasAssignee = Boolean(item.assignee?.trim() && item.assignee !== "Unassigned");
+  const canConfirm = valid && hasAssignee;
+  return (
+    <div
+      onPointerDown={onBeginPlacementDrag}
+      className={cn(
+        "absolute z-20 cursor-grab rounded-lg border bg-white px-2 py-1.5 text-slate-800 shadow-lg ring-2 active:cursor-grabbing",
+        valid ? "border-blue-300 ring-blue-400/20" : "border-red-300 ring-red-400/25"
+      )}
+      style={draftBlockLayoutStyle(item)}
+    >
+      <div className="flex items-center gap-1.5">
+        {Icon && <Icon size={12} className="shrink-0 text-blue-600" />}
+        <span className="min-w-0 truncate text-[11px] font-semibold">{recipient || type}</span>
+      </div>
+      <div className="mt-0.5 truncate text-[10px] text-slate-500">
+        {hhmm(item.hour, item.minute)}
+      </div>
+      <div className="mt-1.5 flex items-center justify-between gap-1.5">
         <button
           type="button"
-          onClick={() => onSelect?.(group[2].id)}
-          className="rounded border border-slate-200 bg-white px-1.5 py-1 text-left text-[10px] font-semibold text-slate-500 shadow-sm hover:bg-slate-50"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onChooseAssignee?.();
+          }}
+          className={cn(
+            "inline-flex min-w-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium hover:bg-slate-50",
+            hasAssignee ? "border-slate-200 text-slate-600" : "border-amber-200 bg-amber-50 text-amber-700"
+          )}
         >
-          +{hidden} more
+          <UserRound size={11} />
+          <span className="truncate">{item.assignee || "Assignee"}</span>
         </button>
-      )}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onCancelPlacement?.();
+            }}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Cancel timeslot edit"
+          >
+            <X size={13} />
+          </button>
+          <button
+            type="button"
+            disabled={!canConfirm}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (!canConfirm) return;
+              onConfirmPlacement?.();
+            }}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-slate-900 text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Confirm timeslot"
+          >
+            <Check size={14} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -297,18 +728,22 @@ function AssigneeGrid({ rows, onSelect }: { rows: Placed[]; onSelect?: (id: stri
   );
 }
 
-function ScheduleBlock({ item, onSelect, compact }: { item: Placed; onSelect?: (id: string) => void; compact?: boolean }) {
+function ScheduleBlock({ item, onSelect, compact }: { item: Placed | LaidOutBlock; onSelect?: (id: string) => void; compact?: boolean }) {
   const { type, recipient } = titleParts(item.title);
   const Icon = item.visitMode ? VISIT_ICON[item.visitMode] : item.kind ? KIND_ICON[item.kind] : undefined;
+  const layoutStyle = "column" in item ? blockLayoutStyle(item, compact ? 40 : 44) : undefined;
   return (
     <button
       type="button"
       onClick={() => onSelect?.(item.id)}
       className={cn(
         "w-full rounded-md border px-2 py-1.5 text-left shadow-sm transition-colors",
+        layoutStyle && "absolute",
         scheduleTone(item),
+        item.scheduleStatus === "Cancelled" && "opacity-55",
         compact ? "min-h-10" : "min-h-11"
       )}
+      style={layoutStyle}
     >
       <div className="flex items-center gap-1.5">
         {Icon && <Icon size={12} className="shrink-0 opacity-70" />}

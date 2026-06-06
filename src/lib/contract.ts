@@ -30,8 +30,8 @@ export function isRouteBasedType(type: SupportTypeId): boolean {
 
 /**
  * Lifecycle of a request / task / route, mirroring the partner dashboard.
- * New submissions start "Pending"; partners advance them. (No backend yet, so
- * the caregiver app only ever emits/sees "Pending" until write-back lands.)
+ * New submissions start "Pending"; partners advance them and the caregiver app
+ * reads the updated session/task/route status back from storage.
  */
 export type RequestStatus =
   | "Pending"
@@ -41,22 +41,24 @@ export type RequestStatus =
   | "Rejected"
   | "Cancelled";
 
+export type TaskScheduleStatus = "Scheduled" | "In progress" | "Completed" | "Cancelled" | "Rescheduled";
+
 /** Allowed status transitions, by fulfilment kind. */
 export const TRANSITIONS: Record<"full" | "reduced", Record<RequestStatus, RequestStatus[]>> = {
   // partner_service routes (food) + all partner-assigned tasks — an accountable actor can act.
   full: {
     Pending: ["Accepted", "Rejected"],
-    Accepted: ["In progress", "Cancelled"],
+    Accepted: ["In progress", "Completed", "Cancelled"],
     "In progress": ["Completed", "Cancelled"],
     Completed: [],
     Rejected: [],
     Cancelled: [],
   },
-  // public / community distribution (supplies) — no actor to accept or reject.
+  // public / community distribution routes use the same broad lifecycle without rejection.
   reduced: {
-    Pending: ["Completed", "Cancelled"],
-    Accepted: [],
-    "In progress": [],
+    Pending: ["Accepted", "Cancelled"],
+    Accepted: ["In progress", "Completed", "Cancelled"],
+    "In progress": ["Completed", "Cancelled"],
     Completed: [],
     Rejected: [],
     Cancelled: [],
@@ -122,6 +124,23 @@ export type SupplyAvailabilityMode =
   | "partner_assessment"
   | "unavailable";
 
+export type FulfilmentCheckpointStage =
+  | "accepted"
+  | "meal_plan_confirmed"
+  | "meal_preparing"
+  | "packing"
+  | "ready_for_pickup"
+  | "out_for_delivery"
+  | "completed";
+
+export interface FulfilmentCheckpoint {
+  stage: FulfilmentCheckpointStage;
+  label: string;
+  completedAt: string;
+  actorName?: string;
+  notes?: string;
+}
+
 /** A per-item (supplies) / per-subtype (food) fulfilment route. */
 export interface FulfilmentRoute {
   label: string;
@@ -141,6 +160,11 @@ export interface FulfilmentRoute {
   status: string;
   /** Workflow state — dashboard-set per route. Distribution uses the reduced lifecycle. */
   lifecycle?: RequestStatus;
+  /** Persisted operational checkpoints for route fulfilment. */
+  checkpoints?: FulfilmentCheckpoint[];
+  /** Caregiver/operator-facing latest checkpoint label, falling back to lifecycle status. */
+  displayStatus?: string;
+  displayStatusUpdatedAt?: string;
 }
 
 // --- request session (what the producer emits on submit) -------------------
@@ -165,6 +189,8 @@ export interface RequestTaskSession {
   assignedTo?: string;
   rejectionReason?: string;
   scheduledFor?: string;
+  scheduleStatus?: TaskScheduleStatus;
+  rescheduledFrom?: string;
   partnerNotes?: string;
 }
 
@@ -198,6 +224,15 @@ export function isPartnerAssigned(task: RequestTaskSession): boolean {
 export function isDistributionTask(task: RequestTaskSession): boolean {
   return isRouteBased(task) && (task.fulfilmentRoutes ?? []).some((route) => route.routeType !== "partner_service");
 }
+export function isCheckpointManagedRoute(
+  task: Pick<RequestTaskSession, "supportType" | "details">,
+  route: Pick<FulfilmentRoute, "label">,
+): boolean {
+  return (
+    task.supportType === "supplies"
+    || (task.supportType === "food" && (route.label === "Food pack / rations" || route.label === "Cooked meals"))
+  );
+}
 
 /**
  * A task's effective status: route-based tasks roll up each route lifecycle;
@@ -207,6 +242,140 @@ export function taskStatus(task: RequestTaskSession): RequestStatus {
   const routes = task.fulfilmentRoutes ?? [];
   if (routes.length) return rollupStatus(routes.map((route) => route.lifecycle ?? "Pending"));
   return task.status;
+}
+
+export function routeStatus(route: FulfilmentRoute): RequestStatus {
+  return route.lifecycle ?? "Pending";
+}
+
+export const CHECKPOINT_LABELS: Record<FulfilmentCheckpointStage, string> = {
+  accepted: "Accepted",
+  meal_plan_confirmed: "Meal plan confirmed",
+  meal_preparing: "Preparing meals",
+  packing: "Packing",
+  ready_for_pickup: "Ready for pickup",
+  out_for_delivery: "Out for delivery",
+  completed: "Completed",
+};
+
+export function checkpointLabel(stage: FulfilmentCheckpointStage): string {
+  return CHECKPOINT_LABELS[stage];
+}
+
+export function routeCheckpointStages(
+  task: Pick<RequestTaskSession, "supportType" | "details">,
+  route: Pick<FulfilmentRoute, "label">,
+): FulfilmentCheckpointStage[] {
+  if (!isCheckpointManagedRoute(task, route)) return [];
+  if (task.supportType === "food" && route.label === "Cooked meals") {
+    return ["accepted", "meal_plan_confirmed", "meal_preparing", "out_for_delivery", "completed"];
+  }
+  return ["accepted", "packing", routeHandoffStage(task), "completed"];
+}
+
+export function routeDisplayStatus(task: RequestTaskSession, route: FulfilmentRoute): string {
+  if (route.displayStatus) return route.displayStatus;
+  const checkpoints = route.checkpoints ?? [];
+  if (checkpoints.length) return checkpoints[checkpoints.length - 1].label;
+  return routeStatus(route);
+}
+
+export function routeDisplayStatusUpdatedAt(route: FulfilmentRoute): string | undefined {
+  if (route.displayStatusUpdatedAt) return route.displayStatusUpdatedAt;
+  const checkpoints = route.checkpoints ?? [];
+  return checkpoints[checkpoints.length - 1]?.completedAt;
+}
+
+export function nextRouteCheckpointStage(
+  task: Pick<RequestTaskSession, "supportType" | "details">,
+  route: Pick<FulfilmentRoute, "label" | "checkpoints">,
+): FulfilmentCheckpointStage | null {
+  const stages = routeCheckpointStages(task, route);
+  if (!stages.length) return null;
+  const completed = new Set((route.checkpoints ?? []).map((checkpoint) => checkpoint.stage));
+  return stages.find((stage) => !completed.has(stage)) ?? null;
+}
+
+export interface RouteStatusSummary {
+  label: string;
+  routeName: string;
+  workspaceId?: string;
+  routeType: FulfilmentRoute["routeType"];
+  status: RequestStatus;
+  displayStatus: string;
+  displayStatusUpdatedAt?: string;
+  isTerminal: boolean;
+}
+
+export interface TaskStatusSummary {
+  id: string;
+  supportType: SupportTypeId;
+  selectedSubtypes: string[];
+  status: RequestStatus;
+  rawStatus: RequestStatus;
+  isTerminal: boolean;
+  rejectionReason?: string;
+  scheduledFor?: string;
+  partnerNotes?: string;
+  routes: RouteStatusSummary[];
+}
+
+export interface RequestStatusSummary {
+  requestRef: string;
+  sessionId: string;
+  overallStatus: RequestStatus;
+  isTerminal: boolean;
+  tasks: TaskStatusSummary[];
+}
+
+export function taskStatusSummary(task: RequestTaskSession): TaskStatusSummary {
+  const status = taskStatus(task);
+  return {
+    id: task.id,
+    supportType: task.supportType,
+    selectedSubtypes: task.selectedSubtypes,
+    status,
+    rawStatus: task.status,
+    isTerminal: isTerminalStatus(status),
+    rejectionReason: task.rejectionReason,
+    scheduledFor: task.scheduledFor,
+    partnerNotes: task.partnerNotes,
+    routes: (task.fulfilmentRoutes ?? []).map((route) => {
+      const routeCurrentStatus = routeStatus(route);
+      return {
+        label: route.label,
+        routeName: route.routeName,
+        workspaceId: route.workspaceId,
+        routeType: route.routeType,
+        status: routeCurrentStatus,
+        displayStatus: routeDisplayStatus(task, route),
+        displayStatusUpdatedAt: routeDisplayStatusUpdatedAt(route),
+        isTerminal: isTerminalStatus(routeCurrentStatus),
+      };
+    }),
+  };
+}
+
+export function requestStatusSummary(session: RequestSession): RequestStatusSummary {
+  return {
+    requestRef: requestRef(session.id),
+    sessionId: session.id,
+    overallStatus: session.overallStatus,
+    isTerminal: isTerminalStatus(session.overallStatus),
+    tasks: session.tasks.map(taskStatusSummary),
+  };
+}
+
+function routeHandoffStage(task: Pick<RequestTaskSession, "supportType" | "details">): FulfilmentCheckpointStage {
+  const text = [
+    str(task.details, "suppliesFulfilment"),
+    str(task.details, "fulfilmentMethod"),
+    str(task.details, "preferredDeliveryWindow"),
+    str(task.details, "preferredDeliveryTime"),
+    str(task.details, "packAccessNotes"),
+  ].join(" ").toLowerCase();
+
+  return text.includes("deliver") || text.includes("delivery") ? "out_for_delivery" : "ready_for_pickup";
 }
 
 // --- work items (the dashboard's atomic, owner-scoped unit) ----------------

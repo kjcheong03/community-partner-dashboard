@@ -17,6 +17,7 @@ export type WorkspaceConfig = {
   supplyRouteLabels?: string[];
   scheduleKind?: ScheduleKind;
   inventoryKind?: InventoryKind;
+  assignees?: string[];
 };
 
 export const WORKSPACES: WorkspaceConfig[] = [
@@ -31,6 +32,7 @@ export const WORKSPACES: WorkspaceConfig[] = [
     profile: "schedule-ops",
     widgets: ["queue", "analytics", "map", "schedule"],
     scheduleKind: "outreach",
+    assignees: ["Aisha Rahman", "Ben Tan", "Cheryl Lim", "Daniel Goh"],
   },
   {
     id: "care-corner-aac-toa-payoh",
@@ -43,6 +45,7 @@ export const WORKSPACES: WorkspaceConfig[] = [
     profile: "schedule-ops",
     widgets: ["queue", "analytics", "map", "schedule"],
     scheduleKind: "outreach",
+    assignees: ["Mei Lin Chua", "Siti Nur Aisyah", "Alvin Ong", "Priya Nair"],
   },
   {
     id: "st-lukes-aac-bishan",
@@ -55,6 +58,7 @@ export const WORKSPACES: WorkspaceConfig[] = [
     profile: "schedule-ops",
     widgets: ["queue", "analytics", "map", "schedule"],
     scheduleKind: "outreach",
+    assignees: ["Rachel Foo", "Mark Lee", "Jasmin Koh", "Samuel Tan"],
   },
   {
     id: "aic-link",
@@ -65,7 +69,9 @@ export const WORKSPACES: WorkspaceConfig[] = [
     logo: "/logos/aic.png",
     supportGroup: "referral",
     profile: "triage-ops",
-    widgets: ["queue", "analytics", "map"],
+    widgets: ["queue", "analytics", "map", "schedule"],
+    scheduleKind: "outreach",
+    assignees: ["Nadia Lim", "Farhan Ismail", "Grace Teo", "Marcus Wong"],
   },
   {
     id: "touch-meals-on-wheels",
@@ -90,6 +96,7 @@ export const WORKSPACES: WorkspaceConfig[] = [
     profile: "schedule-ops",
     widgets: ["queue", "analytics", "map", "schedule"],
     scheduleKind: "transport",
+    assignees: ["Wei Ming Tan", "Nora Lim", "Isaac Koh", "Felicia Chua"],
   },
   {
     id: "food-from-the-heart",
@@ -156,4 +163,8 @@ export function getWorkspaceBySlug(slug: string): WorkspaceConfig | undefined {
 
 export function workspacesForAccount(accountId: string): WorkspaceConfig[] {
   return WORKSPACES.filter((w) => w.accountId === accountId);
+}
+
+export function assigneesForWorkspace(workspace: WorkspaceConfig): string[] {
+  return workspace.assignees ?? [];
 }

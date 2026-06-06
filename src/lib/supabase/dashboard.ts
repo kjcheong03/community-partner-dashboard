@@ -1,5 +1,8 @@
 import { createSupabaseServerClient, hasSupabaseServerConfig } from "./server";
 import {
+  checkpointLabel,
+  type FulfilmentCheckpoint,
+  type FulfilmentCheckpointStage,
   type FulfilmentRoute,
   type RequestSession,
   type RequestStatus,
@@ -24,6 +27,14 @@ type RequestRouteRow = {
   detail: string | null;
   status: string;
   lifecycle: RequestStatus | null;
+};
+
+type RouteCheckpointRow = {
+  route_id: string;
+  stage: FulfilmentCheckpointStage;
+  completed_at: string;
+  actor_name: string | null;
+  notes: string | null;
 };
 
 type WorkspaceWorkItemRow = {
@@ -192,17 +203,52 @@ export async function fetchWorkspaceDashboardData(workspace: WorkspaceConfig): P
   }
 
   const scopedWorkItemRows = (workItemRows ?? []) as WorkspaceWorkItemRow[];
+  const scopedScheduleRows = (scheduleRows ?? []) as ScheduleDashboardRow[];
   const routeDetails = await fetchRouteDetails(scopedWorkItemRows);
+  const routeCheckpoints = await fetchRouteCheckpoints(scopedWorkItemRows);
 
   return {
-    sessions: mapWorkspaceWorkItemSessions(scopedWorkItemRows, routeDetails),
+    sessions: mapWorkspaceWorkItemSessions(scopedWorkItemRows, routeDetails, routeCheckpoints, scopedScheduleRows),
     inventoryRows: workspace.inventoryKind
       ? mapInventoryRows((inventoryRows ?? []) as InventoryDashboardRow[], workspace)
       : null,
     scheduleAssignments: workspace.scheduleKind
-      ? mapScheduleAssignments((scheduleRows ?? []) as ScheduleDashboardRow[])
+      ? mapScheduleAssignments(scopedScheduleRows)
       : null,
   };
+}
+
+async function fetchRouteCheckpoints(rows: WorkspaceWorkItemRow[]): Promise<Map<string, FulfilmentCheckpoint[]>> {
+  const routeIds = [...new Set(rows.map((row) => row.route_id).filter((id): id is string => Boolean(id)))];
+  if (!routeIds.length) return new Map();
+
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("request_route_checkpoints")
+    .select("route_id, stage, completed_at, actor_name, notes")
+    .in("route_id", routeIds)
+    .order("completed_at", { ascending: true });
+
+  if (error) {
+    console.warn("Route checkpoints unavailable; run db/004_route_fulfilment_checkpoints.sql to enable them.", error.message);
+    return new Map();
+  }
+
+  const mapped = new Map<string, FulfilmentCheckpoint[]>();
+  for (const row of (data ?? []) as RouteCheckpointRow[]) {
+    mapped.set(row.route_id, [
+      ...(mapped.get(row.route_id) ?? []),
+      {
+        stage: row.stage,
+        label: checkpointLabel(row.stage),
+        completedAt: row.completed_at,
+        actorName: row.actor_name ?? undefined,
+        notes: row.notes ?? undefined,
+      },
+    ]);
+  }
+
+  return mapped;
 }
 
 async function fetchRouteDetails(rows: WorkspaceWorkItemRow[]): Promise<Map<string, RequestRouteRow>> {
@@ -240,9 +286,12 @@ async function fetchRouteDetails(rows: WorkspaceWorkItemRow[]): Promise<Map<stri
 function mapWorkspaceWorkItemSessions(
   rows: WorkspaceWorkItemRow[],
   routeDetails: Map<string, RequestRouteRow>,
+  routeCheckpoints: Map<string, FulfilmentCheckpoint[]>,
+  scheduleRows: ScheduleDashboardRow[],
 ): RequestSession[] {
   const sessions = new Map<string, RequestSession>();
   const tasksBySession = new Map<string, Map<string, RequestTaskSession & { dbId?: string }>>();
+  const scheduleByTaskId = latestScheduleByTaskId(scheduleRows);
 
   for (const row of rows) {
     let session = sessions.get(row.session_id);
@@ -273,13 +322,13 @@ function mapWorkspaceWorkItemSessions(
 
     let task = taskMap.get(row.task_id);
     if (!task) {
-      task = mapWorkspaceWorkItemTask(row);
+      task = mapWorkspaceWorkItemTask(row, scheduleByTaskId.get(row.task_id));
       taskMap.set(row.task_id, task);
       session.tasks.push(task);
     }
 
     if (row.route_id) {
-      const route = mapWorkspaceWorkItemRoute(row, routeDetails.get(row.route_id));
+      const route = mapWorkspaceWorkItemRoute(row, routeDetails.get(row.route_id), routeCheckpoints.get(row.route_id) ?? []);
       if (route && !task.fulfilmentRoutes?.some((existing) => requestRouteDbId(existing) === row.route_id)) {
         task.fulfilmentRoutes = [...(task.fulfilmentRoutes ?? []), route];
       }
@@ -289,7 +338,7 @@ function mapWorkspaceWorkItemSessions(
   return [...sessions.values()].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
-function mapWorkspaceWorkItemTask(row: WorkspaceWorkItemRow): RequestTaskSession & { dbId?: string } {
+function mapWorkspaceWorkItemTask(row: WorkspaceWorkItemRow, schedule: ScheduleDashboardRow | undefined): RequestTaskSession & { dbId?: string } {
   const isRouteTask = row.item_kind === "food-route" || row.item_kind === "supplies-route";
   return {
     id: row.support_type,
@@ -303,16 +352,31 @@ function mapWorkspaceWorkItemTask(row: WorkspaceWorkItemRow): RequestTaskSession
     fulfilmentRoutes: [],
     costEstimate: row.cost_estimate ?? undefined,
     status: row.status,
-    assignedTo: row.assigned_to ?? undefined,
+    assignedTo: schedule?.assignee_name ?? row.assigned_to ?? undefined,
     rejectionReason: row.rejection_reason ?? undefined,
-    scheduledFor: row.scheduled_for ?? undefined,
-    partnerNotes: row.partner_notes ?? undefined,
+    scheduledFor: schedule?.scheduled_for ?? row.scheduled_for ?? undefined,
+    scheduleStatus: schedule?.schedule_status,
+    rescheduledFrom: schedule?.rescheduled_from ?? undefined,
+    partnerNotes: schedule?.notes ?? row.partner_notes ?? undefined,
   };
+}
+
+function latestScheduleByTaskId(rows: ScheduleDashboardRow[]): Map<string, ScheduleDashboardRow> {
+  const mapped = new Map<string, ScheduleDashboardRow>();
+  for (const row of rows) {
+    if (!row.task_id) continue;
+    const current = mapped.get(row.task_id);
+    if (!current || Date.parse(row.scheduled_for) >= Date.parse(current.scheduled_for)) {
+      mapped.set(row.task_id, row);
+    }
+  }
+  return mapped;
 }
 
 function mapWorkspaceWorkItemRoute(
   row: WorkspaceWorkItemRow,
   detail: RequestRouteRow | undefined,
+  checkpoints: FulfilmentCheckpoint[],
 ): (FulfilmentRoute & { dbId?: string; workspaceId?: string }) | null {
   if (!row.route_id || (!detail && (!row.route_label || !row.route_type))) return null;
 
@@ -330,6 +394,9 @@ function mapWorkspaceWorkItemRoute(
     detail: detail?.detail ?? undefined,
     status: detail?.status ?? row.route_status ?? "",
     lifecycle: detail?.lifecycle ?? row.route_lifecycle ?? undefined,
+    checkpoints,
+    displayStatus: checkpoints[checkpoints.length - 1]?.label,
+    displayStatusUpdatedAt: checkpoints[checkpoints.length - 1]?.completedAt,
   };
 }
 

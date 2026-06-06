@@ -17,3 +17,17 @@ export type DashboardScheduleAssignment = {
   notes?: string;
   sessionId: string;
 };
+
+export type ScheduleAssignmentDetailsInput = {
+  assigneeName?: string;
+  scheduledFor: string;
+  notes?: string;
+};
+
+export type ScheduleAssignmentMutationResult = {
+  id: string;
+  scheduledFor: string;
+  scheduleStatus: ScheduleStatus;
+  assigneeName?: string;
+  notes?: string;
+};
