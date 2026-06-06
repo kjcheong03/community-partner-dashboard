@@ -110,6 +110,20 @@ begin
 exception when duplicate_object then null;
 end $$;
 
+do $$
+begin
+  create type public.route_checkpoint_stage as enum (
+    'accepted',
+    'meal_plan_confirmed',
+    'meal_preparing',
+    'packing',
+    'ready_for_pickup',
+    'out_for_delivery',
+    'completed'
+  );
+exception when duplicate_object then null;
+end $$;
+
 -- ---------------------------------------------------------------------------
 -- Identity, accounts, organisations, workspaces
 -- ---------------------------------------------------------------------------
@@ -324,6 +338,19 @@ create table if not exists public.request_route_items (
   unique (route_id, item_key)
 );
 
+create table if not exists public.request_route_checkpoints (
+  id uuid primary key default gen_random_uuid(),
+  route_id uuid not null references public.request_routes (id) on delete cascade,
+  stage public.route_checkpoint_stage not null,
+  step_order integer not null check (step_order > 0),
+  actor_user_id uuid default auth.uid() references public.profiles (id) on delete set null,
+  actor_name text,
+  notes text,
+  completed_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  unique (route_id, stage)
+);
+
 create table if not exists public.inventory_movements (
   id uuid primary key default gen_random_uuid(),
   inventory_item_id uuid not null references public.inventory_items (id) on delete cascade,
@@ -395,6 +422,8 @@ create index if not exists request_routes_type_idx on public.request_routes (rou
 create index if not exists request_routes_lifecycle_idx on public.request_routes (lifecycle);
 create index if not exists request_route_items_route_id_idx on public.request_route_items (route_id);
 create index if not exists request_route_items_inventory_item_id_idx on public.request_route_items (inventory_item_id);
+create index if not exists request_route_checkpoints_route_id_idx on public.request_route_checkpoints (route_id);
+create index if not exists request_route_checkpoints_completed_at_idx on public.request_route_checkpoints (completed_at desc);
 create index if not exists inventory_items_workspace_id_idx on public.inventory_items (workspace_id);
 create index if not exists inventory_movements_inventory_item_id_idx on public.inventory_movements (inventory_item_id);
 create index if not exists request_status_events_session_id_idx on public.request_status_events (session_id);
@@ -462,7 +491,7 @@ begin
   if transition_scope = 'full' then
     case current_status
       when 'Pending' then return array['Accepted', 'Rejected']::public.request_status[];
-      when 'Accepted' then return array['In progress', 'Cancelled']::public.request_status[];
+      when 'Accepted' then return array['In progress', 'Completed', 'Cancelled']::public.request_status[];
       when 'In progress' then return array['Completed', 'Cancelled']::public.request_status[];
       else return array[]::public.request_status[];
     end case;
@@ -470,7 +499,9 @@ begin
 
   if transition_scope = 'reduced' then
     case current_status
-      when 'Pending' then return array['Completed', 'Cancelled']::public.request_status[];
+      when 'Pending' then return array['Accepted', 'Cancelled']::public.request_status[];
+      when 'Accepted' then return array['In progress', 'Completed', 'Cancelled']::public.request_status[];
+      when 'In progress' then return array['Completed', 'Cancelled']::public.request_status[];
       else return array[]::public.request_status[];
     end case;
   end if;
@@ -1218,6 +1249,7 @@ alter table public.request_tasks enable row level security;
 alter table public.request_routes enable row level security;
 alter table public.inventory_items enable row level security;
 alter table public.request_route_items enable row level security;
+alter table public.request_route_checkpoints enable row level security;
 alter table public.inventory_movements enable row level security;
 alter table public.request_status_events enable row level security;
 alter table public.schedule_assignments enable row level security;
@@ -1407,6 +1439,27 @@ with check (public.can_access_route(route_id));
 drop policy if exists request_route_items_admin_delete on public.request_route_items;
 create policy request_route_items_admin_delete
 on public.request_route_items for delete to authenticated
+using (public.is_admin());
+
+drop policy if exists request_route_checkpoints_select_accessible_route on public.request_route_checkpoints;
+create policy request_route_checkpoints_select_accessible_route
+on public.request_route_checkpoints for select to authenticated
+using (public.can_access_route(route_id));
+
+drop policy if exists request_route_checkpoints_insert_accessible_route on public.request_route_checkpoints;
+create policy request_route_checkpoints_insert_accessible_route
+on public.request_route_checkpoints for insert to authenticated
+with check (public.can_access_route(route_id));
+
+drop policy if exists request_route_checkpoints_update_accessible_route on public.request_route_checkpoints;
+create policy request_route_checkpoints_update_accessible_route
+on public.request_route_checkpoints for update to authenticated
+using (public.can_access_route(route_id))
+with check (public.can_access_route(route_id));
+
+drop policy if exists request_route_checkpoints_admin_delete on public.request_route_checkpoints;
+create policy request_route_checkpoints_admin_delete
+on public.request_route_checkpoints for delete to authenticated
 using (public.is_admin());
 
 drop policy if exists inventory_movements_select_workspace on public.inventory_movements;
@@ -1635,7 +1688,7 @@ values
   ('allkin-aac-amk', 'allkin-aac-amk', 'allkin', 'allkin-aac-amk', 'Allkin Singapore', 'Allkin AAC', '/logos/allkin.png', 'welfare', 'schedule-ops', array['queue', 'analytics', 'map', 'schedule']::public.widget_id[], array[]::text[], 'outreach', null),
   ('care-corner-aac-toa-payoh', 'care-corner-aac-toa-payoh', 'care-corner', 'care-corner-aac-toa-payoh', 'Care Corner', 'Care Corner AAC', '/logos/care-corner.png', 'welfare', 'schedule-ops', array['queue', 'analytics', 'map', 'schedule']::public.widget_id[], array[]::text[], 'outreach', null),
   ('st-lukes-aac-bishan', 'st-lukes-aac-bishan', 'st-lukes', 'st-lukes-aac-bishan', 'St Luke''s ElderCare', 'St Luke''s AAC', '/logos/st-lukes.png', 'welfare', 'schedule-ops', array['queue', 'analytics', 'map', 'schedule']::public.widget_id[], array[]::text[], 'outreach', null),
-  ('aic-link', 'aic-link', 'aic', 'aic-link', 'AIC Link', 'AIC Link', '/logos/aic.png', 'referral', 'triage-ops', array['queue', 'analytics', 'map']::public.widget_id[], array[]::text[], null, null),
+  ('aic-link', 'aic-link', 'aic', 'aic-link', 'AIC Link', 'AIC Link', '/logos/aic.png', 'referral', 'triage-ops', array['queue', 'analytics', 'map', 'schedule']::public.widget_id[], array[]::text[], 'outreach', null),
   ('touch-meals-on-wheels', 'touch-meals-on-wheels', 'touch', 'touch-meals-on-wheels', 'TOUCH Meals-on-Wheels', 'TOUCH MOW', '/logos/touch.png', 'food', 'inventory-ops', array['queue', 'analytics', 'map', 'inventory']::public.widget_id[], array[]::text[], null, 'cooked-meals'),
   ('touch-medical-escort-transport', 'touch-medical-escort-transport', 'touch', 'touch-medical-escort-transport', 'TOUCH Medical Escort & Transport', 'TOUCH MET', '/logos/touch.png', 'transport', 'schedule-ops', array['queue', 'analytics', 'map', 'schedule']::public.widget_id[], array[]::text[], 'transport', null),
   ('food-from-the-heart', 'food-from-the-heart', 'food-from-the-heart', 'food-from-the-heart', 'Food from the Heart', 'FFTH', '/logos/food-from-the-heart.png', 'food', 'inventory-ops', array['queue', 'analytics', 'map', 'inventory']::public.widget_id[], array[]::text[], null, 'food-packs'),
@@ -1821,6 +1874,7 @@ grant select, insert, update, delete on all tables in schema public to authentic
 grant select on public.workspace_work_items to authenticated;
 grant select on public.inventory_dashboard to authenticated;
 grant select on public.schedule_dashboard to authenticated;
+grant select, insert, update, delete on public.request_route_checkpoints to authenticated;
 grant execute on function public.rollup_request_status(public.request_status[]) to authenticated;
 grant execute on function public.allowed_request_transitions(public.request_status, text) to authenticated;
 grant execute on function public.is_valid_request_transition(public.request_status, public.request_status, text) to authenticated;
