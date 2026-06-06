@@ -77,6 +77,14 @@ export function rollupStatus(statuses: RequestStatus[]): RequestStatus {
   return "Cancelled"; // all cancelled
 }
 
+export function isTerminalStatus(status: RequestStatus): boolean {
+  return status === "Completed" || status === "Rejected" || status === "Cancelled";
+}
+
+export function requestRef(sessionId: string): string {
+  return `REQ-${sessionId.replace(/^req-/i, "")}`;
+}
+
 // --- cost ------------------------------------------------------------------
 
 export type CostType = "free" | "fixed" | "mixed" | "estimated" | "partnerReview";

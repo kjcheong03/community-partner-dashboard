@@ -39,7 +39,6 @@ const WORKSPACE_COLUMNS = pickColumns([
   "priority",
   "neededBy",
   "submitted",
-  "cost",
   "status",
 ]);
 

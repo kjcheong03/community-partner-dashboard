@@ -20,6 +20,7 @@ export default function RequestDetailPanel({ item, onStatusChange, onClose, clas
   const { task, session, route } = item;
   const urgency = deriveUrgency(task, session.createdAt);
   const cost = costForItem(item);
+  const caregiverEstimate = caregiverEstimateText(cost);
   const rows = detailRows(task, route?.label);
   const neededBy = neededByLabel(task, session.createdAt);
 
@@ -72,7 +73,7 @@ export default function RequestDetailPanel({ item, onStatusChange, onClose, clas
                 <Row key={r.label} label={r.label}>{r.value}</Row>
               )
             )}
-            <Row label="Cost">{cost.text}</Row>
+            {caregiverEstimate && <Row label="Caregiver-facing estimate">{caregiverEstimate}</Row>}
             {task.rejectionReason && (
               <LongField label="Rejection reason" tone="danger">{task.rejectionReason}</LongField>
             )}
@@ -85,6 +86,12 @@ export default function RequestDetailPanel({ item, onStatusChange, onClose, clas
       </div>
     </div>
   );
+}
+
+function caregiverEstimateText(cost: { text: string; tone: string }): string | null {
+  if (cost.tone === "free" || cost.tone === "review") return null;
+  const text = cost.text.trim();
+  return text && text !== "—" ? text : null;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
