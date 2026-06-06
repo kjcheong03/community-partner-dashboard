@@ -116,6 +116,7 @@ function suppliesTask(items: { item: string; quantity: number }[], status: Reque
   const routes: FulfilmentRoute[] = items.map((it) => ({
     label: it.item,
     quantity: it.quantity,
+    workspaceId: supplyWorkspaceId(it.item),
     routeName:
       it.item === "ART kits"
         ? "Ministry of Health — ART kit distribution"
@@ -127,6 +128,7 @@ function suppliesTask(items: { item: string; quantity: number }[], status: Reque
     availabilityMode: it.item === "Dengue kit / repellent pack" ? "local_stock_subject_to_availability" : "active_distribution_exercise",
     costLabel: "Free",
     status: "Available while stock lasts",
+    lifecycle: status,
   }));
   return {
     id: "supplies",
@@ -144,6 +146,12 @@ function suppliesTask(items: { item: string; quantity: number }[], status: Reque
     fulfilmentRoutes: routes,
     status,
   };
+}
+
+function supplyWorkspaceId(item: string): string {
+  if (item === "ART kits") return "moh-art-kit-distribution";
+  if (item === "Dengue kit / repellent pack") return "nea-dengue-outreach";
+  return "temasek-distribution";
 }
 
 // --- detail presets (real form field keys) ---------------------------------

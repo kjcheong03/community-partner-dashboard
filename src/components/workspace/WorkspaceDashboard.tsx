@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
-import { X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { RefreshCw, X } from "lucide-react";
 import type { FeatureCollection } from "geojson";
 import RequestQueue from "@/components/kit/RequestQueue";
 import RequestDetailPanel from "@/components/kit/RequestDetailPanel";
@@ -19,12 +20,14 @@ import {
   flattenToWorkItems,
   rollupStatus,
   supportTypeLabels,
+  taskStatus,
   type RequestSession,
   type RequestStatus,
   type WorkItem,
 } from "@/lib/contract";
 import { countByArea, generateSessions } from "@/lib/mock";
 import type { WorkspaceConfig } from "@/lib/workspaces";
+import { updateInventoryStockAction, updateWorkItemStatusAction } from "@/app/actions";
 
 const MapHeatmap = dynamic(() => import("@/components/kit/MapHeatmap"), { ssr: false });
 
@@ -42,10 +45,15 @@ const WORKSPACE_COLUMNS = pickColumns([
 
 type Props = {
   workspace: WorkspaceConfig;
+  initialSessions?: RequestSession[];
+  initialInventoryRows?: InventoryRow[] | null;
 };
 
-export default function WorkspaceDashboard({ workspace }: Props) {
-  const [sessions, setSessions] = useState<RequestSession[]>(generateSessions);
+export default function WorkspaceDashboard({ workspace, initialSessions, initialInventoryRows }: Props) {
+  const router = useRouter();
+  const liveData = initialSessions !== undefined;
+  const [isRefreshing, startRefreshTransition] = useTransition();
+  const [sessions, setSessions] = useState<RequestSession[]>(() => initialSessions ?? generateSessions());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null);
   const [geojson, setGeojson] = useState<FeatureCollection | null>(null);
@@ -54,7 +62,12 @@ export default function WorkspaceDashboard({ workspace }: Props) {
   const allItems = useMemo(() => itemsForWorkspace(sessions, workspace), [sessions, workspace]);
   const scheduledItems = useMemo(() => scheduledWorkItemsForWorkspace(allItems, workspace), [allItems, workspace]);
   const scheduleItems = useMemo(() => scheduleItemsFromWorkItems(scheduledItems), [scheduledItems]);
-  const inventory = useMemo(() => inventoryForWorkspace(allItems, workspace), [allItems, workspace]);
+  const inventory = useMemo(
+    () => initialInventoryRows !== undefined
+      ? { rows: initialInventoryRows ?? [], locationHeader: inventoryLocationHeader(workspace) }
+      : inventoryForWorkspace(allItems, workspace),
+    [allItems, initialInventoryRows, workspace]
+  );
   const queueItems = useMemo(
     () => (regionFilter ? allItems.filter((it) => it.session.generalArea === regionFilter) : allItems),
     [allItems, regionFilter]
@@ -71,8 +84,48 @@ export default function WorkspaceDashboard({ workspace }: Props) {
       .catch(() => setGeojson(null));
   }, []);
 
-  function handleStatusChange(item: WorkItem, next: RequestStatus, reason?: string) {
+  function handleRefreshQueue() {
+    startRefreshTransition(() => {
+      router.refresh();
+    });
+  }
+
+  async function handleStatusChange(item: WorkItem, next: RequestStatus, reason?: string) {
     setSessions((prev) => applyStatus(prev, item, next, reason));
+    if (!liveData) return;
+
+    const result = await updateWorkItemStatusAction({
+      workspaceSlug: workspace.slug,
+      taskId: item.route ? null : workItemTaskDbId(item),
+      routeId: item.route ? workItemRouteDbId(item) : null,
+      next,
+      reason,
+    });
+
+    if (!result.ok) {
+      console.error("Failed to update request status", result.error);
+      return;
+    }
+
+    router.refresh();
+  }
+
+  async function handleSaveStock(row: InventoryRow, available: number, topUp: number) {
+    if (!liveData || !row.id || row.children?.length) return;
+    const result = await updateInventoryStockAction({
+      workspaceSlug: workspace.slug,
+      inventoryItemId: row.id,
+      available,
+      fulfilled: row.fulfilled ?? 0,
+      reason: topUp > 0 ? `Dashboard stock edit; top up ${topUp}` : "Dashboard stock edit",
+    });
+
+    if (!result.ok) {
+      console.error("Failed to update inventory stock", result.error);
+      return;
+    }
+
+    router.refresh();
   }
 
   return (
@@ -102,9 +155,10 @@ export default function WorkspaceDashboard({ workspace }: Props) {
             {workspace.widgets.includes("inventory") && inventory.rows.length > 0 && (
               <Section>
                 <InventoryTable
-                  key={workspace.id}
+                  key={inventoryTableKey(workspace, inventory.rows)}
                   rows={inventory.rows}
                   locationHeader={inventory.locationHeader}
+                  onSaveStock={handleSaveStock}
                 />
               </Section>
             )}
@@ -121,7 +175,17 @@ export default function WorkspaceDashboard({ workspace }: Props) {
                     defaultSortDir="desc"
                     showAllColumns
                     statusTabs
-                    toolbarAction={regionFilter ? <ClearRegionButton region={regionFilter} onClear={() => setRegionFilter(null)} /> : null}
+                    toolbarAction={
+                      liveData || regionFilter ? (
+                        <QueueActions
+                          refreshing={isRefreshing}
+                          showRefresh={liveData}
+                          regionFilter={regionFilter}
+                          onRefresh={handleRefreshQueue}
+                          onClearRegion={() => setRegionFilter(null)}
+                        />
+                      ) : null
+                    }
                     todoEmptyTitle="Nothing to do right now"
                     todoEmptyHint={`New requests routed to ${workspace.shortName} will appear here.`}
                     closedEmptyTitle="No closed requests"
@@ -192,33 +256,15 @@ export default function WorkspaceDashboard({ workspace }: Props) {
 function itemsForWorkspace(sessions: RequestSession[], workspace: WorkspaceConfig): WorkItem[] {
   if (workspace.supplyRouteLabels?.length) {
     const allowed = new Set(workspace.supplyRouteLabels);
+    const scoped = flattenToWorkItems(sessions, workspace.id)
+      .filter((it) => it.kind === "supplies-route" && it.route && allowed.has(it.route.label));
+    if (scoped.length) return scoped;
+
+    // Mock/legacy sessions may not carry route.workspaceId yet. Keep the local
+    // fallback route-granular by matching the workspace's known supply labels.
     return flattenToWorkItems(sessions)
-      .filter((it) => it.kind === "supplies-task")
-      .flatMap((it) => {
-        const fulfilmentRoutes = (it.task.fulfilmentRoutes ?? []).filter((route) => allowed.has(route.label));
-        if (!fulfilmentRoutes.length) return [];
-        const selectedSubtypes = it.task.selectedSubtypes.filter((subtype) => allowed.has(subtype));
-        const itemsNeeded = Array.isArray(it.task.details.itemsNeeded)
-          ? it.task.details.itemsNeeded.filter((entry) => {
-              if (!entry || typeof entry !== "object" || !("item" in entry)) return false;
-              return allowed.has(String(entry.item));
-            })
-          : it.task.details.itemsNeeded;
-        return [{
-          ...it,
-          id: `${it.id}:${workspace.id}`,
-          ownerOrgId: workspace.id,
-          task: {
-            ...it.task,
-            fulfilmentRoutes,
-            selectedSubtypes,
-            details: {
-              ...it.task.details,
-              itemsNeeded,
-            },
-          },
-        }];
-      });
+      .filter((it) => it.kind === "supplies-route" && it.route && allowed.has(it.route.label))
+      .map((it) => ({ ...it, id: `${it.id}:${workspace.id}` }));
   }
 
   return flattenToWorkItems(sessions, workspace.id).filter((i) => i.relation !== "backup");
@@ -334,6 +380,34 @@ function inventoryForWorkspace(items: WorkItem[], workspace: WorkspaceConfig): {
   return { rows: [], locationHeader: "Collection point" };
 }
 
+function inventoryLocationHeader(workspace: WorkspaceConfig) {
+  if (workspace.inventoryKind === "public-supplies") return "Collection point";
+  return "Fulfilment point";
+}
+
+function inventoryTableKey(workspace: WorkspaceConfig, rows: InventoryRow[]) {
+  return `${workspace.id}:${rows.map(inventoryRowSignature).join("|")}`;
+}
+
+function inventoryRowSignature(row: InventoryRow): string {
+  return [
+    row.id ?? row.item,
+    row.available,
+    row.reserved,
+    row.fulfilled ?? 0,
+    row.lastUpdated,
+    ...(row.children ?? []).map(inventoryRowSignature),
+  ].join(":");
+}
+
+function workItemTaskDbId(item: WorkItem): string | null {
+  return (item.task as typeof item.task & { dbId?: string }).dbId ?? null;
+}
+
+function workItemRouteDbId(item: WorkItem): string | null {
+  return (item.route as NonNullable<typeof item.route> & { dbId?: string } | undefined)?.dbId ?? null;
+}
+
 const PUBLIC_SUPPLY_STOCK = [
   { item: "Masks", available: 420, threshold: 120, collectionPoint: "Temasek distribution shelf", lastUpdated: isoSgt(2026, 6, 5, 8, 10) },
   { item: "ART kits", available: 38, threshold: 40, collectionPoint: "MOH pickup shelf", lastUpdated: isoSgt(2026, 6, 5, 8, 20) },
@@ -425,15 +499,12 @@ function inventoryRowFromMovements(
 
 function supplyMovementsForItem(items: WorkItem[], item: string) {
   return items.flatMap((it) => {
-    if (it.kind !== "supplies-task") return [];
-    const requested = Array.isArray(it.task.details.itemsNeeded) ? it.task.details.itemsNeeded : [];
-    return requested
-      .filter((entry): entry is { item: string; quantity?: string | number } => typeof entry === "object" && entry !== null && "item" in entry && entry.item === item)
-      .map((entry) => ({
-        quantity: Number(entry.quantity ?? 0) || 0,
-        status: it.status,
-        createdAt: it.session.createdAt,
-      }));
+    if (it.kind !== "supplies-route" || it.route?.label !== item) return [];
+    return [{
+      quantity: Number(it.route.quantity ?? 0) || 0,
+      status: it.status,
+      createdAt: it.session.createdAt,
+    }];
   });
 }
 
@@ -530,18 +601,16 @@ function applyStatus(sessions: RequestSession[], item: WorkItem, next: RequestSt
     if (s.id !== item.sessionId) return s;
     const tasks = s.tasks.map((t) => {
       if (t.supportType !== item.supportType) return t;
-      if (item.kind === "food-route" && item.route) {
+      if (item.route) {
         const routes = (t.fulfilmentRoutes ?? []).map((r) =>
           r.label === item.route!.label ? { ...r, lifecycle: next } : r
         );
-        const taskStatus = rollupStatus(
-          routes.filter((r) => r.routeType === "partner_service").map((r) => r.lifecycle ?? "Pending")
-        );
-        return { ...t, fulfilmentRoutes: routes, status: taskStatus };
+        const updatedTask = { ...t, fulfilmentRoutes: routes };
+        return { ...updatedTask, status: taskStatus(updatedTask) };
       }
       return { ...t, status: next, ...(reason ? { rejectionReason: reason } : {}) };
     });
-    return { ...s, tasks, overallStatus: rollupStatus(tasks.map((t) => t.status)) };
+    return { ...s, tasks, overallStatus: rollupStatus(tasks.map(taskStatus)) };
   });
 }
 
@@ -559,5 +628,37 @@ function ClearRegionButton({ region, onClear }: { region: string; onClear: () =>
       {region}
       <X size={12} />
     </button>
+  );
+}
+
+function QueueActions({
+  refreshing,
+  showRefresh,
+  regionFilter,
+  onRefresh,
+  onClearRegion,
+}: {
+  refreshing: boolean;
+  showRefresh: boolean;
+  regionFilter: string | null;
+  onRefresh: () => void;
+  onClearRegion: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {showRefresh && (
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={refreshing}
+          aria-label="Refresh queue"
+          title="Refresh queue"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:cursor-wait disabled:opacity-60"
+        >
+          <RefreshCw size={15} className={refreshing ? "animate-spin" : ""} />
+        </button>
+      )}
+      {regionFilter && <ClearRegionButton region={regionFilter} onClear={onClearRegion} />}
+    </div>
   );
 }

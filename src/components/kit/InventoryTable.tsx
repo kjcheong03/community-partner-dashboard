@@ -10,8 +10,10 @@ export type InventoryStatus = "OK" | "Low" | "Out";
 export type InventoryRow = {
   id?: string;
   item: string;
+  group?: string;
   available: number;
   reserved: number;
+  fulfilled?: number;
   collectionPoint: string;
   lastUpdated: string;
   status: InventoryStatus;
@@ -28,9 +30,11 @@ const STATUS_TONE: Record<InventoryStatus, string> = {
 export default function InventoryTable({
   rows,
   locationHeader = "Collection point",
+  onSaveStock,
 }: {
   rows: InventoryRow[];
   locationHeader?: string;
+  onSaveStock?: (row: InventoryRow, available: number, topUp: number) => Promise<void> | void;
 }) {
   const [inventory, setInventory] = useState(() => rows);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -44,7 +48,7 @@ export default function InventoryTable({
     setTopUpAmount("");
   }
 
-  function saveEdit() {
+  async function saveEdit() {
     if (!editing) return;
     const correctedCount = Math.max(0, Number(draftCount) || 0);
     const topUp = Math.max(0, Number(topUpAmount) || 0);
@@ -55,6 +59,7 @@ export default function InventoryTable({
         lastUpdated: formatEditedAt(new Date()),
       }))
     );
+    await onSaveStock?.(editing, nextAvailable, topUp);
     closeEdit();
   }
 
@@ -66,7 +71,7 @@ export default function InventoryTable({
 
   return (
     <div className="overflow-x-auto thin-scrollbar rounded-lg border border-slate-200">
-      <table className="w-full min-w-[880px] table-fixed border-collapse text-left text-sm">
+      <table className="w-full min-w-[880px] table-fixed border-collapse text-left text-[12.5px]">
         <ColGroup />
         <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
           <tr>
@@ -171,12 +176,12 @@ export default function InventoryTable({
 function ColGroup() {
   return (
     <colgroup>
-      <col className="w-[28%]" />
+      <col className="w-[25%]" />
+      <col className="w-[11%]" />
       <col className="w-[10%]" />
-      <col className="w-[10%]" />
-      <col className="w-[22%]" />
-      <col className="w-[14%]" />
-      <col className="w-[8%]" />
+      <col className="w-[23%]" />
+      <col className="w-[16%]" />
+      <col className="w-[7%]" />
       <col className="w-[8%]" />
     </colgroup>
   );
@@ -222,7 +227,7 @@ function InventoryTr({
               />
             </button>
           )}
-          <span className={cn("truncate text-slate-800", isParent ? "text-[15px] font-semibold" : "font-medium")}>{row.item}</span>
+          <span className={cn("truncate text-slate-800", isParent ? "text-[13.5px] font-semibold" : "font-medium")}>{row.item}</span>
         </div>
       </Td>
       <Td align="right">
@@ -273,7 +278,7 @@ function InventoryChildrenPanel({
           aria-hidden={!expanded}
         >
           <div className="min-h-0 overflow-hidden">
-            <table className="w-full table-fixed border-collapse text-left text-sm">
+            <table className="w-full table-fixed border-collapse text-left text-[12.5px]">
               <ColGroup />
               <tbody className="divide-y divide-slate-100">
                 {rows.map((child) => (

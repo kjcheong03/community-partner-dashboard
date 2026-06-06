@@ -539,15 +539,12 @@ function inventoryRowsFromWorkItems(items: WorkItem[]): InventoryRow[] {
 
 function supplyMovementsForItem(items: WorkItem[], item: string) {
   return items.flatMap((it) => {
-    if (it.kind !== "supplies-task") return [];
-    const requested = Array.isArray(it.task.details.itemsNeeded) ? it.task.details.itemsNeeded : [];
-    return requested
-      .filter((entry): entry is { item: string; quantity?: string | number } => typeof entry === "object" && entry !== null && "item" in entry && entry.item === item)
-      .map((entry) => ({
-        quantity: Number(entry.quantity ?? 0) || 0,
-        status: it.status,
-        createdAt: it.session.createdAt,
-      }));
+    if (it.kind !== "supplies-route" || it.route?.label !== item) return [];
+    return [{
+      quantity: Number(it.route.quantity ?? 0) || 0,
+      status: it.status,
+      createdAt: it.session.createdAt,
+    }];
   });
 }
 

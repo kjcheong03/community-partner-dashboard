@@ -118,6 +118,8 @@ export type SupplyAvailabilityMode =
 export interface FulfilmentRoute {
   label: string;
   quantity?: number;
+  /** Owning dashboard workspace for this route. Distribution routes are scoped by this id. */
+  workspaceId?: string;
   routeName: string;
   /** Logo path under /public; falls back to a letter. */
   logo?: string;
@@ -129,7 +131,7 @@ export interface FulfilmentRoute {
   detail?: string;
   /** Availability note emitted by the producer (e.g. "Available while stock lasts"). NOT a lifecycle state. */
   status: string;
-  /** Workflow state — dashboard-set, meaningful ONLY for `partner_service` routes (food). */
+  /** Workflow state — dashboard-set per route. Distribution uses the reduced lifecycle. */
   lifecycle?: RequestStatus;
 }
 
@@ -185,12 +187,25 @@ export function isRouteBased(task: RequestTaskSession): boolean {
 export function isPartnerAssigned(task: RequestTaskSession): boolean {
   return !isRouteBased(task);
 }
+export function isDistributionTask(task: RequestTaskSession): boolean {
+  return isRouteBased(task) && (task.fulfilmentRoutes ?? []).some((route) => route.routeType !== "partner_service");
+}
+
+/**
+ * A task's effective status: route-based tasks roll up each route lifecycle;
+ * partner-assigned tasks use their own status.
+ */
+export function taskStatus(task: RequestTaskSession): RequestStatus {
+  const routes = task.fulfilmentRoutes ?? [];
+  if (routes.length) return rollupStatus(routes.map((route) => route.lifecycle ?? "Pending"));
+  return task.status;
+}
 
 // --- work items (the dashboard's atomic, owner-scoped unit) ----------------
 //
 // Routed tasks fan out: a food task with cooked-meals + food-pack produces two
-// `food-route` items owned by two different orgs. Supplies routes have no actor
-// so they surface as a single reduced-lifecycle `supplies-task` (admin view only).
+// `food-route` items owned by two different orgs. Supplies produce one
+// `supplies-route` item per distribution workspace/channel.
 
 export interface WorkItem {
   /** Stable id: `${sessionId}:${supportType}` or `${sessionId}:${supportType}:${routeLabel}`. */
@@ -199,7 +214,7 @@ export interface WorkItem {
   ownerOrgId: string | null;
   relation: "primary" | "backup" | "owner";
   supportType: SupportTypeId;
-  kind: "partner-task" | "supplies-task" | "food-route";
+  kind: "partner-task" | "supplies-route" | "food-route";
   status: RequestStatus;
   transitions: RequestStatus[];
   task: RequestTaskSession;
@@ -209,19 +224,19 @@ export interface WorkItem {
 
 /**
  * Flatten sessions into owner-scoped work items. Pass `orgId` to scope to one
- * partner (sees its partner-assigned tasks where it's primary/backup, and its
- * own food routes). Omit `orgId` for an unscoped/admin view (also surfaces
- * supplies tasks, which have no partner owner).
+ * partner/workspace (sees its partner-assigned tasks where it's primary/backup,
+ * its own food routes, and distribution routes owned by that workspace).
+ * Omit `ownerId` for an unscoped/admin view.
  */
-export function flattenToWorkItems(sessions: RequestSession[], orgId?: string): WorkItem[] {
+export function flattenToWorkItems(sessions: RequestSession[], ownerId?: string): WorkItem[] {
   const items: WorkItem[] = [];
 
   for (const session of sessions) {
     for (const task of session.tasks) {
       if (isPartnerAssigned(task)) {
-        const isPrimary = task.primaryOrganisationId === orgId;
-        const isBackup = task.fallbackOrganisationIds.includes(orgId ?? "");
-        if (orgId && !isPrimary && !isBackup) continue;
+        const isPrimary = task.primaryOrganisationId === ownerId;
+        const isBackup = task.fallbackOrganisationIds.includes(ownerId ?? "");
+        if (ownerId && !isPrimary && !isBackup) continue;
         items.push({
           id: `${session.id}:${task.supportType}`,
           sessionId: session.id,
@@ -240,10 +255,10 @@ export function flattenToWorkItems(sessions: RequestSession[], orgId?: string): 
       // route-based
       const routes = task.fulfilmentRoutes ?? [];
       for (const route of routes) {
+        const status = route.lifecycle ?? "Pending";
         if (route.routeType === "partner_service") {
           // food — one item per route, owned by the route's org
-          if (orgId && route.organisationId !== orgId) continue;
-          const status = route.lifecycle ?? "Pending";
+          if (ownerId && route.organisationId !== ownerId) continue;
           items.push({
             id: `${session.id}:${task.supportType}:${route.label}`,
             sessionId: session.id,
@@ -257,22 +272,22 @@ export function flattenToWorkItems(sessions: RequestSession[], orgId?: string): 
             route,
             session,
           });
+          continue;
         }
-      }
 
-      const hasPublicRoutes = routes.some((r) => r.routeType !== "partner_service");
-      if (hasPublicRoutes && !orgId) {
-        // supplies — no partner owner; reduced lifecycle; admin/unscoped view only
+        if (ownerId && route.workspaceId && route.workspaceId !== ownerId) continue;
+        if (ownerId && !route.workspaceId) continue;
         items.push({
-          id: `${session.id}:${task.supportType}`,
+          id: `${session.id}:${task.supportType}:${route.label}`,
           sessionId: session.id,
           ownerOrgId: null,
           relation: "owner",
           supportType: task.supportType,
-          kind: "supplies-task",
-          status: task.status,
-          transitions: TRANSITIONS.reduced[task.status],
+          kind: "supplies-route",
+          status,
+          transitions: TRANSITIONS.reduced[status],
           task,
+          route,
           session,
         });
       }
@@ -423,6 +438,7 @@ export function detailRows(task: RequestTaskSession, focusSubtype?: string): Det
       push(
         "Items",
         items
+          .filter((i) => !focusSubtype || i.item === focusSubtype)
           .filter((i) => i.quantity)
           .map((i) => `${i.item}${i.quantity ? ` ×${i.quantity}` : ""}`)
           .join(", "),
@@ -495,7 +511,6 @@ export function detailRows(task: RequestTaskSession, focusSubtype?: string): Det
       push("Specify", str(d, "specifyOther"));
       push("Main concern", str(d, "mainConcern"));
       push("Current situation", str(d, "currentSituation"));
-      push("When to contact", str(d, "urgency"));
       push("Preferred language", str(d, "language"));
       push("Existing support", str(d, "existingSupport"));
       push("Notes", str(d, "notes"));

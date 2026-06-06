@@ -259,10 +259,12 @@ function QueueToolbar({
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <div>{statusTabs}</div>
-      {(action || pagination) && (
+      <div className="flex flex-wrap items-center gap-2">
+        {statusTabs}
+        {action}
+      </div>
+      {pagination && (
         <div className="flex items-center gap-2">
-          {action}
           {pagination}
         </div>
       )}

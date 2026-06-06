@@ -8,7 +8,6 @@ import { URGENCY_STYLES } from "./theme";
 import { costForItem, deriveUrgency, detailRows, formatSubmitted, neededByLabel } from "./format";
 import StatusBadge from "./StatusBadge";
 import StatusActionBar from "./StatusActionBar";
-import OrgLogo from "./OrgLogo";
 
 type Props = {
   item: WorkItem;
@@ -58,6 +57,7 @@ export default function RequestDetailPanel({ item, onStatusChange, onClose, clas
             <Row label="Contact">{session.contactNumber}</Row>
             <Row label="Area">{session.generalArea ?? "—"}</Row>
             {session.address && <Row label="Address">{session.address}</Row>}
+            {session.postalCode && <Row label="Postal code">{session.postalCode}</Row>}
           </div>
         </Section>
 
@@ -78,28 +78,6 @@ export default function RequestDetailPanel({ item, onStatusChange, onClose, clas
             )}
           </div>
         </Section>
-
-        {/* Fulfilment routes — route-based tasks only */}
-        {task.fulfilmentRoutes && task.fulfilmentRoutes.length > 0 && (
-          <Section title="Fulfilment routes">
-            <div className="space-y-2">
-              {task.fulfilmentRoutes.map((r) => (
-                <div key={r.label} className="flex items-start gap-2.5 rounded-md border border-slate-200 px-3 py-2">
-                  <OrgLogo name={r.routeName} logo={r.logo} size={26} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-medium text-slate-700">{r.label}</p>
-                    <p className="truncate text-[11px] text-slate-400">{r.routeName}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">{r.status}</p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 text-right">
-                    <span className="text-xs font-medium text-slate-600">{r.costLabel}</span>
-                    {r.lifecycle && <StatusBadge status={r.lifecycle} />}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Section>
-        )}
       </div>
 
       <div className="border-t border-slate-200 px-5 py-4">

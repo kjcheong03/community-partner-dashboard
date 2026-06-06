@@ -65,7 +65,7 @@ export function costForItem(item: WorkItem): { text: string; tone: CostTone } {
     const label = item.route.costLabel;
     return { text: label, tone: /free/i.test(label) ? "free" : "estimated" };
   }
-  if (item.kind === "supplies-task") return { text: "Free", tone: "free" };
+  if (item.kind === "supplies-route") return { text: "Free", tone: "free" };
   return formatCost(item.task.costEstimate);
 }
 

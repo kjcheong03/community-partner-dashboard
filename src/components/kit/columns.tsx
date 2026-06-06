@@ -8,7 +8,7 @@ import StatusBadge from "./StatusBadge";
 
 // Full column superset the request data can support. Each accessor renders
 // something sensible for every WorkItem kind (partner-task / food-route /
-// supplies-task) or a clean "—" when genuinely N/A — never blank or [object Object].
+// supplies-route) or a clean "—" when genuinely N/A — never blank or [object Object].
 //
 // NOTE: deriveUrgency / neededByLabel are interim in format.ts until CARA exports
 // them from contract.ts; re-point those imports on the next contract sync.
@@ -18,19 +18,11 @@ const STATUS_RANK = { Pending: 0, Accepted: 1, "In progress": 2, Completed: 3, R
 
 const dash = (s?: string | null) => (s && s.trim() ? s : "—");
 
-// Subtype / items summary: supplies → "Masks ×1, ART kits ×4"; food route → its
+// Subtype / items summary: supplies route → "Masks ×1"; food route → its
 // label; partner/food task → selected subtypes.
 function detailSummary(it: WorkItem): string {
-  if (it.kind === "supplies-task") {
-    const items = it.task.details?.itemsNeeded;
-    if (Array.isArray(items) && items.length) {
-      return items
-        .map((x) => {
-          const o = x as { item?: string; quantity?: string | number };
-          return o.quantity != null ? `${o.item} ×${o.quantity}` : String(o.item ?? "");
-        })
-        .join(", ");
-    }
+  if (it.kind === "supplies-route" && it.route) {
+    return it.route.quantity != null ? `${it.route.label} ×${it.route.quantity}` : it.route.label;
   }
   if (it.kind === "food-route" && it.route?.label === "Cooked meals") return cookedMealSummary(it);
   if (it.kind === "food-route" && it.route?.label === "Food pack / rations") return foodPackSummary(it);
