@@ -17,10 +17,10 @@ export default function Sidebar() {
       <div className="px-5 py-6 border-b border-slate-700">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-blue-500 flex items-center justify-center text-white font-bold text-sm">
-            C
+            O
           </div>
           <div>
-            <p className="text-white font-semibold text-sm leading-tight">CARA</p>
+            <p className="text-white font-semibold text-sm leading-tight">ORCA</p>
             <p className="text-slate-400 text-xs leading-tight">Community Dashboard</p>
           </div>
         </div>
@@ -45,7 +45,7 @@ export default function Sidebar() {
       </nav>
 
       <div className="px-5 py-4 border-t border-slate-700">
-        <p className="text-slate-500 text-xs">CARA v1.0 · Prototype</p>
+        <p className="text-slate-500 text-xs">ORCA v1.0 · Prototype</p>
       </div>
     </aside>
   );

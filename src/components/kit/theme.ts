@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
-// CARA partner-dashboard kit — shared design layer.
+// ORCA partner-dashboard kit — shared design layer.
 //
 // This is the ONE owned styling layer the whole kit consumes. Colour encodes
 // STATE, never decoration (the brief: "use colour to communicate state").
 //
 // Keyed by the canonical RequestStatus string literals. These are *data*, not a
 // type declaration — the RequestStatus union lives in the shared contract
-// (cara/contract.ts). When that lands, annotate the maps with
+// (orca/contract.ts). When that lands, annotate the maps with
 // `satisfies Record<RequestStatus, ChipStyle>`; no duplicate union is created.
 // ---------------------------------------------------------------------------
 

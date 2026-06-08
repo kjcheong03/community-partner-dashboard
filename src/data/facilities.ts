@@ -56,12 +56,12 @@ const AIC_CARE_SERVICES: Facility[] = [
 
 // Polyclinics & hospitals relevant to every org (referral / escalation points).
 const CLINICS: Facility[] = [
-  { id: "CL-TPE", name: "Tampines Polyclinic", type: "clinic", lat: 1.354, lng: 103.944, region: "East", info: "Walk-in & chronic care. Accepts CARA welfare referrals.", hours: "Mon–Sun 8am–4.30pm" },
+  { id: "CL-TPE", name: "Tampines Polyclinic", type: "clinic", lat: 1.354, lng: 103.944, region: "East", info: "Walk-in & chronic care. Accepts ORCA welfare referrals.", hours: "Mon–Sun 8am–4.30pm" },
   { id: "CL-BDK", name: "Bedok Polyclinic", type: "clinic", lat: 1.327, lng: 103.918, region: "East", info: "Acute fever screening active during dengue advisory.", hours: "Mon–Sun 8am–4.30pm" },
   { id: "CL-AMK", name: "Ang Mo Kio Polyclinic", type: "clinic", lat: 1.374, lng: 103.845, region: "Central", info: "Geriatric clinic on-site. Wheelchair accessible.", hours: "Mon–Sat 8am–4.30pm" },
   { id: "CL-NTFH", name: "Ng Teng Fong General Hospital", type: "clinic", lat: 1.334, lng: 103.745, region: "West", info: "A&E + specialist clinics. Nearest hospital for west zone.", hours: "24 hours (A&E)" },
   { id: "CL-SGH", name: "Singapore General Hospital", type: "clinic", lat: 1.279, lng: 103.835, region: "Central", info: "A&E + specialist clinics. Nearest hospital for central zone.", hours: "24 hours (A&E)" },
-  { id: "CL-YSH", name: "Yishun Polyclinic", type: "clinic", lat: 1.428, lng: 103.84, region: "North", info: "Fever screening active. Accepts CARA welfare referrals.", hours: "Mon–Sun 8am–4.30pm" },
+  { id: "CL-YSH", name: "Yishun Polyclinic", type: "clinic", lat: 1.428, lng: 103.84, region: "North", info: "Fever screening active. Accepts ORCA welfare referrals.", hours: "Mon–Sun 8am–4.30pm" },
   { id: "CL-GEY", name: "Geylang Polyclinic", type: "clinic", lat: 1.314, lng: 103.887, region: "East", info: "Dengue cluster zone — extended fever screening hours.", hours: "Mon–Sun 8am–6pm" },
 ];
 

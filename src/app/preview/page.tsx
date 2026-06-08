@@ -149,7 +149,7 @@ const REGION_DRAWER_MAX_WIDTH = 1160;
 const DETAIL_DRAWER_WIDTH = 500;
 const OVERLAY_GAP = 16;
 
-// Kitchen-sink harness for the CARA partner-dashboard kit. Renders each kit
+// Kitchen-sink harness for the ORCA partner-dashboard kit. Renders each kit
 // piece in isolation. Today: design layer + leaf primitives. Data-driven
 // components (RequestQueue, RequestDetailPanel, KPIStrip, …) land on top of the
 // shared contract once contract.ts is in.
@@ -201,7 +201,7 @@ export default function PreviewPage() {
     <div className="min-h-screen bg-[var(--background)] p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <header>
-          <h1 className="text-lg font-semibold text-slate-800">CARA Kit — Preview</h1>
+          <h1 className="text-lg font-semibold text-slate-800">ORCA Kit — Preview</h1>
           <p className="text-sm text-slate-500">
             Owned design layer + leaf primitives. Data-driven components compose onto the shared contract.
           </p>

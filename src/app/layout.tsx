@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CARA Community Dashboard",
+  title: "Community Partner Dashboard",
   description: "Responder-facing community response operations platform",
 };
 

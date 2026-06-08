@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
-// CARA request contract — SINGLE SOURCE OF TRUTH.
+// ORCA request contract — SINGLE SOURCE OF TRUTH.
 //
-// Producer: the CARA caregiver app (emits RequestSession on submit).
+// Producer: the ORCA caregiver app (emits RequestSession on submit).
 // Consumer: the community-partner dashboard kit (imports a synced copy).
 //
 // Zero-dependency, pure TypeScript. Do not import app/UI code here.

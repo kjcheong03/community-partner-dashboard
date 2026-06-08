@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
 // Mock RequestSession[] for the kit preview/dashboard. Frontend-only.
 //
-// Emits exactly what the CARA producer would persist on submit (the canonical
-// contract shape), with real form field keys, routed to the real CARA org ids
+// Emits exactly what the ORCA producer would persist on submit (the canonical
+// contract shape), with real form field keys, routed to the real ORCA org ids
 // so flattenToWorkItems() scopes correctly. Deterministic — fixed ids/times.
 // ---------------------------------------------------------------------------
 

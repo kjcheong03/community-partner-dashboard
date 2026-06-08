@@ -10,7 +10,7 @@ Approved community partner organisation responders — coordinators at SG Cares 
 
 ## Product Purpose
 
-CARA Community Dashboard is a case management and community response operations platform. It converts individual caregiver support requests (medication collection, welfare checks, transport, food delivery, advisory) into coordinated community response. Success means a responder can open the dashboard, understand the situation at a glance, take action on the highest-priority requests, and hand off — all within minutes. It is not an analytics product; it is an action product.
+ORCA Community Dashboard is a case management and community response operations platform. It converts individual caregiver support requests (medication collection, welfare checks, transport, food delivery, advisory) into coordinated community response. Success means a responder can open the dashboard, understand the situation at a glance, take action on the highest-priority requests, and hand off — all within minutes. It is not an analytics product; it is an action product.
 
 ## Brand Personality
 

@@ -59,7 +59,7 @@ function facilityIcon(f: Facility, opts: { assigned?: boolean; target?: boolean 
     ">${glyph}</div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
-    className: "cara-facility-marker",
+    className: "orca-facility-marker",
   });
 }
 
@@ -101,7 +101,7 @@ function areaCaseIcon(group: AreaGroup, selected: boolean) {
     ">${count}</div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
-    className: "cara-area-marker",
+    className: "orca-area-marker",
   });
 }
 

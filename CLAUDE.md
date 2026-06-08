@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**CARA Community Dashboard** — a responder-facing case management and community response operations platform used by approved partner organisations (SG Cares Volunteer Centres, Silver Generation Office teams, eldercare/pharmacy/transport partners) during public health emergencies in Singapore.
+**ORCA Community Dashboard** — a responder-facing case management and community response operations platform used by approved partner organisations (SG Cares Volunteer Centres, Silver Generation Office teams, eldercare/pharmacy/transport partners) during public health emergencies in Singapore.
 
 GitHub: https://github.com/happyweijie/cara-community-dashboard
 

@@ -10,7 +10,7 @@ import StatusBadge from "./StatusBadge";
 // something sensible for every WorkItem kind (partner-task / food-route /
 // supplies-route) or a clean "—" when genuinely N/A — never blank or [object Object].
 //
-// NOTE: deriveUrgency / neededByLabel are interim in format.ts until CARA exports
+// NOTE: deriveUrgency / neededByLabel are interim in format.ts until ORCA exports
 // them from contract.ts; re-point those imports on the next contract sync.
 
 const URGENCY_RANK = { High: 0, Medium: 1, Low: 2 } as const;
