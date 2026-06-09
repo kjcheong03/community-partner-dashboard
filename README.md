@@ -1,36 +1,89 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app)
+<p align="center">
+  <img src="src/app/icon.svg" alt="ORCA Community" width="96" />
+</p>
 
-## Getting Started
+# ORCA Community Partner Dashboard
 
-First, run the development server:
+> An operations room that turns caregiver requests into coordinated community response.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+**ORCA** stands for **Outreach, Resource & Caregiver Assistance**.
+
+---
+
+## The problem
+
+When caregivers ask for help — medication collection, groceries, a welfare check, transport — those
+requests scatter across phone calls, messages, and spreadsheets. The partner organisations that can
+actually help have no shared, real-time picture of who needs what, who's free, and what's already in
+motion. During an emergency, that friction costs time no one has.
+
+## How ORCA solves it
+
+The Community Partner Dashboard is the **operations room** for community responders. Caregiver
+requests arrive as a live, prioritised queue scoped to each partner organisation, and coordinators
+triage, assign, schedule, and fulfil them — all in one place, built for speed under pressure.
+
+- **Live request queue** — incoming caregiver requests, sorted by urgency, scoped to your
+  organisation.
+- **One-glance triage** — status and priority are legible at a glance; the next action is always one
+  click away.
+- **Drag-to-schedule** — a working-hours schedule board (Singapore time) with conflict detection.
+- **Fulfilment tracking** — checkpoint-by-checkpoint progress for supplies and meal routes.
+- **Inventory at a glance** — stock levels with clear OK / Low / Out signals.
+- **Smart rerouting** — if one partner can't take a request, it automatically reroutes to a fallback
+  organisation.
+- **Map view** — a heatmap of requests by Singapore planning area.
+- **Privacy by design** — area-level location only; minimum necessary information, always.
+
+## How it all connects
+
+ORCA has three surfaces that stay in sync in **real time**:
+
+```
+ ┌──────────────────────┐   publishes    ┌──────────────────────┐   sends help    ┌──────────────────────┐
+ │ ORCA Authority       │   advisory ─►   │ ORCA Caregiver       │   request ─►    │ ORCA Community       │
+ │ Dashboard            │                 │ Web App              │                 │ Partner Dashboard    │
+ │ · health officers    │                 │ · caregivers         │                 │ · partner orgs ◄HERE │
+ └──────────────────────┘                 └──────────────────────┘                 └──────────┬───────────┘
+                                                    ▲                                         │
+                                                    └───────── fulfilment status ◄────────────┘
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+From the responder's seat:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. A caregiver submits a help request in the **Caregiver Web App**.
+2. The request **arrives** in this dashboard, routed to the right partner and prioritised by urgency.
+3. The coordinator **accepts, assigns, and schedules** it.
+4. The team fulfils it, advancing it through fulfilment checkpoints.
+5. Each update **syncs back** to the caregiver in real time — closing the loop.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Tech stack
 
-## Learn More
+- **Next.js 16** (App Router) · **React 19** · **TypeScript**
+- **Tailwind CSS v4** · **lucide-react** · **clsx** + **tailwind-merge**
+- **Next.js Server Actions** for the request / schedule / inventory workflow
+- **Leaflet** + **geojson-vt** for the planning-area heatmap
+- **Recharts** + hand-built SVG for analytics
 
-To learn more about Next.js, take a look at the following resources:
+## APIs & data sources
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Service | Used for | Details |
+|---|---|---|
+| Mapbox | Operations map + planning-area heatmap basemap (`light-v11`) | token · falls back to OpenStreetMap |
+| OpenStreetMap | Default map tiles | no key |
+| Singapore planning-area GeoJSON | Heatmap regions | bundled |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Getting started
 
-## Deploy on Vercel
+```bash
+npm install
+npm run dev                    # http://localhost:3000
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+> Optional: set `NEXT_PUBLIC_MAPBOX_TOKEN` for Mapbox basemaps (otherwise OpenStreetMap is used).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+<p align="center">
+  Built for a hackathon by <strong>acacia tembusu dining hall</strong> 🌳
+</p>
