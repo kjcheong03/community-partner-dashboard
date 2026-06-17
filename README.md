@@ -33,7 +33,41 @@ triage, assign, schedule, and fulfil them — all in one place, built for speed 
 - **Smart rerouting** — if one partner can't take a request, it automatically reroutes to a fallback
   organisation.
 - **Map view** — a heatmap of requests by Singapore planning area.
+- **Demo partner workspaces** — includes 10 demo dashboards across 5 support types: health /
+  emergency supplies, food / meal support, welfare checks, assisted transport, and care referral /
+  navigation.
 - **Privacy by design** — area-level location only; minimum necessary information, always.
+
+The partner names and logos are used only to make the demo workflow realistic; this prototype is not
+an official deployment or partnership with those organisations.
+
+## Features
+
+### Demo partner workspaces
+
+Choose from 10 demo partner dashboards across 5 support types: health / emergency supplies, food /
+meal support, welfare checks, assisted transport, and care referral / navigation.
+
+<img src="docs/screenshots/community-workspaces.png" alt="Community partner workspace selector" width="960" />
+
+### Operations overview
+
+Track request volume, urgency, fulfilment status, queue activity, and area-level demand in one
+operations view.
+
+<img src="docs/screenshots/community-operations-overview.png" alt="Community partner operations overview" width="960" />
+
+### Scheduling
+
+Assign work by time or assignee, spot conflicts, and keep fulfilment work inside a shared schedule.
+
+<img src="docs/screenshots/community-schedule.png" alt="Community partner schedule board" width="960" />
+
+### Inventory
+
+Monitor available and reserved stock so partners commit only what they can actually fulfil.
+
+<img src="docs/screenshots/community-inventory.png" alt="Community partner inventory table" width="960" />
 
 ## How it all connects
 
@@ -56,6 +90,11 @@ From the responder's seat:
 3. The coordinator **accepts, assigns, and schedules** it.
 4. The team fulfils it, advancing it through fulfilment checkpoints.
 5. Each update **syncs back** to the caregiver in real time — closing the loop.
+
+## Related repositories
+
+- [ORCA Caregiver Web App](https://github.com/kjcheong03/orca)
+- [ORCA Authority Dashboard](https://github.com/kjcheong03/authority-dashboard)
 
 ## Tech stack
 
