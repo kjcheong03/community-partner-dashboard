@@ -47,3 +47,6 @@ next-env.d.ts
 # Temporary files
 CHANGES.md
 *.png
+!docs/
+!docs/screenshots/
+!docs/screenshots/*.png

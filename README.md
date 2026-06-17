@@ -45,8 +45,13 @@ an official deployment or partnership with those organisations.
 
 ### Demo partner workspaces
 
-Choose from 10 demo partner dashboards across 5 support types: health / emergency supplies, food /
-meal support, welfare checks, assisted transport, and care referral / navigation.
+Choose from 10 demo partner dashboards across 5 support types:
+
+- Health / emergency supplies
+- Food / meal support
+- Welfare checks
+- Assisted transport
+- Care referral / navigation
 
 <img src="docs/screenshots/community-workspaces.png" alt="Community partner workspace selector" width="960" />
 
